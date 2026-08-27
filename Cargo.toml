@@ -1,0 +1,75 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+
+[workspace.dependencies]
+# ours
+cloud-contract  = { path = "crates/contract" }
+cloud-ledger    = { path = "crates/ledger" }
+cloud-importers = { path = "crates/importers" }
+cloud-api       = { path = "crates/api" }
+cloud-draft     = { path = "crates/draft" }
+cloud-domains   = { path = "crates/domains" }
+cloud-edge      = { path = "crates/edge" }
+cloud-runtime   = { path = "crates/runtime-agent" }
+cloud-builder   = { path = "crates/builder" }
+cap-deploy      = { path = "crates/cap-deploy" }
+cap-edge-contract = { path = "crates/cap-edge-contract" }
+bundle-cloud    = { path = "crates/bundle-cloud" }
+
+# aho, by path. Never forked: cloud features are new capability crates composed in bundle-cloud.
+aho-types   = { path = "../aho/crates/aho-types" }
+aho-config  = { path = "../aho/crates/aho-config" }
+aho-log     = { path = "../aho/crates/aho-log" }
+aho-cap     = { path = "../aho/crates/aho-cap" }
+aho-policy  = { path = "../aho/crates/aho-policy" }
+aho-compose = { path = "../aho/crates/aho-compose" }
+aho-session = { path = "../aho/crates/aho-session" }
+aho-egress  = { path = "../aho/crates/seams/aho-egress" }
+aho-fs      = { path = "../aho/crates/seams/aho-fs" }
+aho-proc    = { path = "../aho/crates/seams/aho-proc" }
+aho-net     = { path = "../aho/crates/seams/aho-net" }
+surface-rpc = { path = "../aho/crates/surfaces/surface-rpc" }
+aho-lab     = { path = "../aho/crates/bundles/aho-lab" }
+aho-sdk     = { path = "../aho/crates/bundles/aho-sdk" }
+
+# third-party, pinned by major; each crate opts in via `x.workspace = true`
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+toml        = "0.8"
+blake3      = "1"
+thiserror   = "2"
+globset     = "0.4"
+uuid        = { version = "1", features = ["v4", "serde"] }
+time        = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"] }
+tokio       = { version = "1", features = ["full"] }
+futures     = "0.3"
+axum        = { version = "0.8", features = ["ws"] }
+tower       = { version = "0.5", features = ["util"] }
+hyper       = { version = "1", features = ["full"] }
+hyper-util  = { version = "0.1", features = ["full"] }
+http        = "1"
+http-body-util = "0.1"
+reqwest     = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+clap        = { version = "4", features = ["derive"] }
+base64      = "0.22"
+tempfile    = "3"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+field_reassign_with_default = "allow"
+
+[profile.dev]
+debug = "line-tables-only"
+# Incremental caches doubled the target dir; a full workspace test build must fit on small disks.
+incremental = false
+
+[profile.dev.package."*"]
+debug = false
