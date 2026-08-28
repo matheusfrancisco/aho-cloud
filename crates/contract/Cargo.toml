@@ -1,0 +1,22 @@
+[package]
+name = "cloud-contract"
+description = "The stack-agnostic contracts of aho cloud: deploy manifest v1, edge.toml, principal claims, release-ledger bodies, drafts. No I/O, no aho types."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+blake3.workspace = true
+thiserror.workspace = true
+globset.workspace = true
+uuid.workspace = true
+time.workspace = true
+schemars = "1"
+ts-rs = { version = "12", features = ["serde-json-impl"] }
+
+[lints]
+workspace = true
