@@ -1,0 +1,22 @@
+{
+  "api_version": "deploy.aho.cloud/v1",
+  "project": "acme-shop",
+  "source": { "kind": "git", "repo": "https://github.com/acme/shop", "commit": "0123456789abcdef0123456789abcdef01234567" },
+  "build": { "kind": "dockerfile" },
+  "processes": [
+    { "name": "web", "port": 8080, "expose": "public", "health": { "kind": "http", "path": "/healthz" } },
+    { "name": "worker", "command": ["python", "-m", "worker"], "health": { "kind": "command", "argv": ["python", "-m", "worker", "--check"] },
+      "volume": { "mount": "/data", "size_mb": 1024 } }
+  ],
+  "domains": [ { "hostname": "shop.acme.com", "verification": "cname" } ],
+  "auth": { "mode": "oidc", "provider": { "kind": "google" } },
+  "secrets": [
+    { "name": "STRIPE_KEY", "reach": ["api.stripe.com"], "expires": "2027-01-31" },
+    { "name": "STRIPE_WEBHOOK_SECRET", "reach": ["api.stripe.com"] }
+  ],
+  "egress": ["api.stripe.com", "*.sentry.io"],
+  "data_class": "pii",
+  "region": "eu-west",
+  "owner": { "name": "Ana", "email": "ana@acme.com", "escalation": [ { "name": "Bo", "email": "bo@acme.com" } ] },
+  "budget": { "ceiling_usd_month": 50, "degrade": "sleep" }
+}

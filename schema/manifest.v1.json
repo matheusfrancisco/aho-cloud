@@ -1,0 +1,675 @@
+{
+  "$defs": {
+    "Auth": {
+      "description": "Authentication at the edge. Authorization stays in the app.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "No edge login; every route behaves as `passthrough` unless `edge.toml` says otherwise.",
+          "properties": {
+            "mode": {
+              "const": "none",
+              "type": "string"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "One shared password per environment.",
+          "properties": {
+            "mode": {
+              "const": "password",
+              "type": "string"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Email magic links, optionally limited to `allowed_domains` (e.g. `acme.com`).",
+          "properties": {
+            "allowed_domains": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "mode": {
+              "const": "magic_link",
+              "type": "string"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "const": "oidc",
+              "type": "string"
+            },
+            "provider": {
+              "$ref": "#/$defs/OidcProvider"
+            }
+          },
+          "required": [
+            "mode",
+            "provider"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The app authenticates its own users; the edge forwards untouched.",
+          "properties": {
+            "mode": {
+              "const": "app_owned",
+              "type": "string"
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Budget": {
+      "additionalProperties": false,
+      "properties": {
+        "ceiling_usd_month": {
+          "description": "Whole US dollars per month; at least 1.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "degrade": {
+          "$ref": "#/$defs/Degrade"
+        }
+      },
+      "required": [
+        "ceiling_usd_month",
+        "degrade"
+      ],
+      "type": "object"
+    },
+    "Build": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Only valid with `source.kind = oci`.",
+          "properties": {
+            "kind": {
+              "const": "prebuilt",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "context": {
+              "default": ".",
+              "type": "string"
+            },
+            "kind": {
+              "const": "dockerfile",
+              "type": "string"
+            },
+            "path": {
+              "default": "Dockerfile",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "builder": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "buildpack",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "builder"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Run `command` inside `base_image` with the source at `/workspace`; the result is the image.",
+          "properties": {
+            "base_image": {
+              "type": "string"
+            },
+            "command": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "const": "command",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "command",
+            "base_image"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Contact": {
+      "additionalProperties": false,
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "phone": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "email"
+      ],
+      "type": "object"
+    },
+    "DataClass": {
+      "description": "Ordered from least to most regulated; raising it is a widening.",
+      "enum": [
+        "none",
+        "pii",
+        "payments",
+        "health"
+      ],
+      "type": "string"
+    },
+    "Degrade": {
+      "description": "What happens when the ceiling is reached.",
+      "oneOf": [
+        {
+          "const": "sleep",
+          "description": "Stop every process; the edge serves a \"paused\" page until the owner raises the ceiling.",
+          "type": "string"
+        }
+      ]
+    },
+    "Domain": {
+      "additionalProperties": false,
+      "properties": {
+        "hostname": {
+          "type": "string"
+        },
+        "verification": {
+          "$ref": "#/$defs/DomainMode"
+        }
+      },
+      "required": [
+        "hostname",
+        "verification"
+      ],
+      "type": "object"
+    },
+    "DomainMode": {
+      "description": "How the customer points the domain at us.",
+      "oneOf": [
+        {
+          "const": "cname",
+          "description": "`CNAME <project>.edge.<cloud>` plus a TXT record; HTTP-01 certificate.",
+          "type": "string"
+        },
+        {
+          "const": "apex",
+          "description": "A/AAAA (or ALIAS) to the edge's stable addresses plus a TXT record.",
+          "type": "string"
+        },
+        {
+          "const": "ns_delegated",
+          "description": "The subzone's NS records point at us; DNS-01 wildcard certificate.",
+          "type": "string"
+        }
+      ]
+    },
+    "Expose": {
+      "oneOf": [
+        {
+          "const": "public",
+          "description": "Reachable through the edge on the project's domains.",
+          "type": "string"
+        },
+        {
+          "const": "internal",
+          "description": "Reachable only from the project's other processes.",
+          "type": "string"
+        }
+      ]
+    },
+    "Health": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "`GET path` on the process port (or `port`) must answer 2xx.",
+          "properties": {
+            "kind": {
+              "const": "http",
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "port": {
+              "default": null,
+              "format": "uint16",
+              "maximum": 65535,
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Exit status 0 means healthy.",
+          "properties": {
+            "argv": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "const": "command",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "argv"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "OidcProvider": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "google",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "github",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "microsoft",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Any OIDC issuer, including a SAML identity provider behind an OIDC broker.",
+          "properties": {
+            "client_id": {
+              "type": "string"
+            },
+            "issuer": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "custom",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "issuer",
+            "client_id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Owner": {
+      "additionalProperties": false,
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "escalation": {
+          "default": [],
+          "description": "Called in order after the owner. The platform is always last and is not listed.",
+          "items": {
+            "$ref": "#/$defs/Contact"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "phone": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "email"
+      ],
+      "type": "object"
+    },
+    "Process": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "default": null,
+          "description": "`None` runs the image's own entrypoint.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "expose": {
+          "$ref": "#/$defs/Expose",
+          "default": "internal"
+        },
+        "health": {
+          "$ref": "#/$defs/Health"
+        },
+        "name": {
+          "description": "Unique per manifest; same rules as the project slug.",
+          "type": "string"
+        },
+        "port": {
+          "default": null,
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "volume": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Volume"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "name",
+        "health"
+      ],
+      "type": "object"
+    },
+    "Secret": {
+      "additionalProperties": false,
+      "properties": {
+        "expires": {
+          "default": null,
+          "description": "ISO date (`YYYY-MM-DD`) the credential stops working, if it expires.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "description": "Environment-variable style: `[A-Z][A-Z0-9_]*`.",
+          "type": "string"
+        },
+        "reach": {
+          "description": "Hosts this secret may be sent to. Each must be covered by `egress`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "reach"
+      ],
+      "type": "object"
+    },
+    "Source": {
+      "description": "What gets built or run.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "A prebuilt image, by digest (`sha256:<64 hex>`).",
+          "properties": {
+            "digest": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "oci",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "digest"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A git commit (40 hex) in a repository the cloud can fetch.",
+          "properties": {
+            "commit": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "git",
+              "type": "string"
+            },
+            "repo": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "repo",
+            "commit"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A source archive uploaded to the cloud, by content hash (`blake3:<64 hex>`).",
+          "properties": {
+            "hash": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "archive",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "hash"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "Volume": {
+      "additionalProperties": false,
+      "properties": {
+        "mount": {
+          "description": "Absolute path inside the process.",
+          "type": "string"
+        },
+        "size_mb": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "mount",
+        "size_mb"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "api_version": {
+      "description": "Always [`API_VERSION`].",
+      "type": "string"
+    },
+    "auth": {
+      "$ref": "#/$defs/Auth"
+    },
+    "budget": {
+      "$ref": "#/$defs/Budget"
+    },
+    "build": {
+      "$ref": "#/$defs/Build"
+    },
+    "data_class": {
+      "$ref": "#/$defs/DataClass"
+    },
+    "domains": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Domain"
+      },
+      "type": "array"
+    },
+    "egress": {
+      "default": [],
+      "description": "Every outbound host the app may reach (a leading `*.` matches subdomains). Must cover\nevery secret's `reach`.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "owner": {
+      "$ref": "#/$defs/Owner"
+    },
+    "processes": {
+      "items": {
+        "$ref": "#/$defs/Process"
+      },
+      "type": "array"
+    },
+    "project": {
+      "description": "Project slug: lowercase letters, digits and `-`, 1–40 chars, starting with a letter.",
+      "type": "string"
+    },
+    "region": {
+      "default": null,
+      "description": "Required when `data_class` is not `none`.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "secrets": {
+      "default": [],
+      "description": "Secret names and where each may be sent. Values never appear in a manifest.",
+      "items": {
+        "$ref": "#/$defs/Secret"
+      },
+      "type": "array"
+    },
+    "source": {
+      "$ref": "#/$defs/Source"
+    }
+  },
+  "required": [
+    "api_version",
+    "project",
+    "source",
+    "build",
+    "processes",
+    "auth",
+    "data_class",
+    "owner",
+    "budget"
+  ],
+  "title": "Manifest",
+  "type": "object"
+}
