@@ -1,0 +1,25 @@
+[package]
+name = "cloud-api"
+description = "The control-plane HTTP API as data: routes, request and response bodies, and a typed client."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+client = ["dep:reqwest"]
+
+[dependencies]
+cloud-contract.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ts-rs = { version = "12", features = ["serde-json-impl"] }
+reqwest = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio.workspace = true
+axum.workspace = true
+
+[lints]
+workspace = true
