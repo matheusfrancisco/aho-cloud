@@ -1,0 +1,30 @@
+{
+  "objectClassName": "domain",
+  "handle": "2138514_DOMAIN_COM-VRSN",
+  "ldhName": "ACME.COM",
+  "links": [
+    { "value": "https://rdap.verisign.com/com/v1/domain/ACME.COM", "rel": "self", "href": "https://rdap.verisign.com/com/v1/domain/ACME.COM", "type": "application/rdap+json" }
+  ],
+  "status": ["client delete prohibited", "client transfer prohibited", "client update prohibited"],
+  "entities": [
+    {
+      "objectClassName": "entity",
+      "handle": "292",
+      "roles": ["registrar"],
+      "publicIds": [{ "type": "IANA Registrar ID", "identifier": "292" }],
+      "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "Example Registrar, Inc."]]]
+    }
+  ],
+  "events": [
+    { "eventAction": "registration", "eventDate": "1991-01-23T05:00:00Z" },
+    { "eventAction": "expiration", "eventDate": "2027-01-22T05:00:00Z" },
+    { "eventAction": "last changed", "eventDate": "2025-12-20T09:14:38Z" },
+    { "eventAction": "last update of RDAP database", "eventDate": "2026-09-28T18:02:11Z" }
+  ],
+  "secureDNS": { "delegationSigned": false },
+  "nameservers": [
+    { "objectClassName": "nameserver", "ldhName": "NS1.ACME.COM" },
+    { "objectClassName": "nameserver", "ldhName": "NS2.ACME.COM" }
+  ],
+  "rdapConformance": ["rdap_level_0", "icann_rdap_technical_implementation_guide_1", "icann_rdap_response_profile_1"]
+}
