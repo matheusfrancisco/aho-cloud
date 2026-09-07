@@ -1,0 +1,45 @@
+[package]
+name = "cloud-runtime"
+description = "Per-host runtime agent: runs approved deployments as Firecracker microVMs with cgroup ceilings, an egress allowlist proxy and health supervision; plus cloud-guest, the PID 1 inside each VM."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "cloud-runtime-agent"
+path = "src/bin/cloud-runtime-agent.rs"
+
+[[bin]]
+name = "cloud-guest"
+path = "src/bin/cloud-guest.rs"
+
+[dependencies]
+cloud-contract.workspace = true
+cloud-api.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+futures.workspace = true
+axum.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+http-body-util.workspace = true
+clap = { workspace = true, features = ["env"] }
+blake3.workspace = true
+uuid.workspace = true
+parking_lot = "0.12"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+nix = { version = "0.31", features = ["signal", "process", "mount", "reboot", "fs"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+tokio-vsock = "0.7"
+
+[dev-dependencies]
+tempfile.workspace = true
+reqwest.workspace = true
+
+[lints]
+workspace = true
