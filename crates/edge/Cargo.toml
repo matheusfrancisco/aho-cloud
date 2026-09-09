@@ -1,0 +1,54 @@
+[package]
+name = "cloud-edge"
+description = "Multi-tenant reverse proxy for aho cloud: TLS, edge.toml route modes, edge login (password, magic link, OIDC), principal JWT minting and JWKS, webhook signature verifiers, tombstone pages."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "cloud-edge"
+path = "src/main.rs"
+
+[dependencies]
+cloud-contract.workspace = true
+cloud-api.workspace = true
+cloud-domains.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+futures.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+reqwest.workspace = true
+clap = { workspace = true, features = ["env"] }
+base64.workspace = true
+blake3.workspace = true
+parking_lot = "0.12"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+p256 = { version = "0.13", features = ["ecdsa", "pem", "pkcs8"] }
+rsa = { version = "0.9", features = ["sha2"] }
+sha2 = { version = "0.10", features = ["oid"] }
+hmac = "0.12"
+subtle = "2"
+hex = "0.4"
+rand_core = { version = "0.6", features = ["getrandom"] }
+argon2 = "0.5"
+url = "2"
+lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "pool", "tokio1-rustls-tls"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+axum.workspace = true
+tempfile.workspace = true
+reqwest = { workspace = true, features = ["http2"] }
+rcgen = "0.14"
+tokio-tungstenite = "0.29"
+
+[lints]
+workspace = true
