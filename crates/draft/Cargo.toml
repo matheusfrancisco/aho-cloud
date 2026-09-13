@@ -1,0 +1,21 @@
+[package]
+name = "cloud-draft"
+description = "aho session log → deploy-manifest draft with per-field evidence: builds, processes, ports, egress and secret names, each tied to the hash-chained entries it came from."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+aho-log.workspace = true
+aho-net.workspace = true
+aho-proc.workspace = true
+aho-types.workspace = true
+cloud-contract.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+regex = "1"
+
+[lints]
+workspace = true
