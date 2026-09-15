@@ -1,0 +1,28 @@
+[package]
+name = "cap-deploy"
+description = "aho capabilities for aho cloud: cloud_draft (deploy-manifest draft from the session log) and cloud_propose (file a release proposal; approvals stay human-only)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+aho-cap.workspace = true
+aho-config.workspace = true
+aho-egress.workspace = true
+aho-log.workspace = true
+aho-types.workspace = true
+cloud-api.workspace = true
+cloud-contract.workspace = true
+cloud-draft.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+axum.workspace = true
+reqwest.workspace = true
+parking_lot = "0.12"
+
+[lints]
+workspace = true
