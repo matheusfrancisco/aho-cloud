@@ -1,0 +1,22 @@
+[package]
+name = "cap-edge-contract"
+description = "aho capability teaching the aho cloud principal contract: a prompt section, edge_routes (check edge.toml) and edge_verifier (principal-JWT middleware for Express, FastAPI, Go, axum)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+aho-cap.workspace = true
+aho-config.workspace = true
+aho-fs.workspace = true
+aho-log.workspace = true
+aho-types.workspace = true
+cloud-contract.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true
