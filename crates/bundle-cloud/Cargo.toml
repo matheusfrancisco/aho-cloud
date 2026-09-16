@@ -1,0 +1,30 @@
+[package]
+name = "bundle-cloud"
+description = "The aho cloud product: aho-lab plus cloud_draft/cloud_propose and the edge contract, and `ahoc`, which serves it over aho rpc on stdio."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "ahoc"
+path = "src/main.rs"
+
+[dependencies]
+aho-cap.workspace = true
+aho-lab.workspace = true
+aho-sdk.workspace = true
+aho-types.workspace = true
+cap-deploy.workspace = true
+cap-edge-contract.workspace = true
+clap.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+aho-compose.workspace = true
+aho-log.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true
