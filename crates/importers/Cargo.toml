@@ -1,0 +1,20 @@
+[package]
+name = "cloud-importers"
+description = "Repo files (Dockerfile, Procfile, compose, fly.toml, render.yaml, app.yaml, package.json, Python, .env.example) → a manifest draft with file:line evidence."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cloud-contract.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+yaml-rust2 = { version = "0.11", default-features = false }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
