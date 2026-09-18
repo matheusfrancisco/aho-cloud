@@ -1,0 +1,8 @@
+{
+  "name": "@acme/web-app",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "next build",
+    "start": "next start -p 3000"
+  }
+}

@@ -1,0 +1,8 @@
+services:
+  web:
+    build: .
+    ports:
+      - "80:6060"
+  worker:
+    build: .
+    command: ./worker --verbose

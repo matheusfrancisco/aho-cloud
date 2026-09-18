@@ -1,0 +1,7 @@
+runtime: python312
+service: checkout
+entrypoint: gunicorn -b :$PORT main:app
+readiness_check:
+  path: "/ready"
+env_variables:
+  MODE: prod

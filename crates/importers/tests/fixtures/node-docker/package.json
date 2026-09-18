@@ -1,0 +1,4 @@
+{
+  "name": "with-docker",
+  "scripts": { "start": "node server.js" }
+}

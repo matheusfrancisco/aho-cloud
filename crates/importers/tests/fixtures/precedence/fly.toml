@@ -1,0 +1,4 @@
+app = "prec"
+
+[http_service]
+  internal_port = 9090

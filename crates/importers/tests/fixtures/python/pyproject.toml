@@ -1,0 +1,6 @@
+[build-system]
+requires = ["setuptools"]
+
+[project]
+name = "billing_api"
+version = "0.1.0"

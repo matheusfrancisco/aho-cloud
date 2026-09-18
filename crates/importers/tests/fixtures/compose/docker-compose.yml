@@ -1,0 +1,25 @@
+x-common: &common
+  restart: unless-stopped
+  build: .
+
+services:
+  api:
+    <<: *common
+    command: ["./bin/api", "--listen", ":3000"]
+    ports:
+      - "8080:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/ready"]
+  jobs:
+    build:
+      context: .
+      dockerfile: Dockerfile.jobs
+    command: ./bin/jobs --queue default
+    expose:
+      - "9100"
+  db:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+  vendored:
+    build: ../elsewhere

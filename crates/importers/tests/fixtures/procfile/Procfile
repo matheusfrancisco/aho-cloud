@@ -1,0 +1,5 @@
+# processes
+web: gunicorn app:app --bind 0.0.0.0:8000
+worker: celery -A tasks worker --loglevel=info
+release: python manage.py migrate
+clock: python clock.py $INTERVAL

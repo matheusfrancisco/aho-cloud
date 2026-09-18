@@ -1,0 +1,25 @@
+app = "Acme Shop"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile.fly"
+
+[processes]
+  app = "bin/server --port 8080"
+  worker = ["bin/worker", "--concurrency", "4"]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"
+
+[[mounts]]
+  source = "data"
+  destination = "/data"
+  initial_size = "3gb"
+  processes = ["app"]

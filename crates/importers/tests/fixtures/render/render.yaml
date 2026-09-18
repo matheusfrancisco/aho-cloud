@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: Storefront
+    runtime: docker
+    dockerfilePath: ./docker/Dockerfile
+    dockerContext: ./
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 9000
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: LOG_FORMAT
+        value: json
+    disk:
+      name: uploads
+      mountPath: /var/uploads
+      sizeGB: 2
+    domains:
+      - Shop.Example.com
+  - type: worker
+    name: mailer
+    runtime: docker
+    dockerCommand: ./mailer
+  - type: static
+    name: docs
