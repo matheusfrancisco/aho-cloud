@@ -1,0 +1,58 @@
+[package]
+name = "cloud-control-plane"
+description = "The aho cloud API server: auth (device flow, passkeys, device keys), orgs, projects, releases, approvals, domains, secrets, workspaces, and the internal routes the edge polls."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "cloud-control-plane"
+path = "src/main.rs"
+
+[dependencies]
+cloud-contract.workspace = true
+cloud-api.workspace = true
+cloud-ledger.workspace = true
+cloud-domains.workspace = true
+aho-log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+blake3.workspace = true
+uuid.workspace = true
+tokio.workspace = true
+futures.workspace = true
+axum.workspace = true
+reqwest.workspace = true
+clap = { workspace = true, features = ["env"] }
+base64.workspace = true
+async-trait = "0.1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+parking_lot = "0.12"
+# 0.9, not 0.8: sqlx 0.8's optional sqlite driver pins libsqlite3-sys 0.30, which Cargo's `links`
+# check refuses next to aho-log's rusqlite 0.37 even when the feature is off. 0.9 shares 0.35.
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "postgres", "macros", "migrate"] }
+ed25519-dalek = "2"
+p256 = { version = "0.13", features = ["ecdsa"] }
+ciborium = "0.2"
+sha2 = "0.10"
+chacha20poly1305 = "0.10"
+argon2 = "0.5"
+rand = "0.8"
+subtle = "2"
+memchr = "2"
+
+[dev-dependencies]
+tempfile.workspace = true
+tower.workspace = true
+http-body-util.workspace = true
+aho-types.workspace = true
+
+[lints]
+workspace = true
