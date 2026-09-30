@@ -1,9 +1,11 @@
 //! The aho cloud runtime agent: runs approved deployments as Firecracker microVMs on a
-//! Linux/KVM host, and `cloud-guest`, the PID 1 inside each VM.
+//! Linux/KVM host (or, for local development, as Docker containers), and `cloud-guest`, the
+//! PID 1 inside each VM.
 //!
 //! - [`supervisor`]: desired state per (project, stage); reconcile, scale, restart,
 //!   maintenance, sleep, health checks;
-//! - [`vmm`]: the VM backend seam; [`firecracker`]: the real backend;
+//! - [`vmm`]: the VM backend seam; [`firecracker`]: the real backend; [`docker`]: the local
+//!   development backend (no isolation boundary);
 //! - [`image`]: OCI image → ext4 rootfs via skopeo, umoci and mkfs.ext4;
 //! - [`net`]: guest addresses, MACs, taps and the nftables ruleset;
 //! - [`egress`]: the CONNECT proxy enforcing each deployment's egress allowlist;
@@ -15,6 +17,7 @@
 
 pub mod api;
 pub mod cgroup;
+pub mod docker;
 pub mod egress;
 pub mod exec;
 pub mod firecracker;

@@ -14,19 +14,15 @@ path = "src/main.rs"
 cloud-contract.workspace = true
 cloud-api = { workspace = true, features = ["client"] }
 cloud-importers.workspace = true
-cloud-draft.workspace = true
+cloud-workdir.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 clap = { workspace = true, features = ["env"] }
 base64.workspace = true
-blake3.workspace = true
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
-ignore = "0.4"
-tar = "0.4"
-flate2 = "1"
 hostname = "0.4"
 
 [target.'cfg(unix)'.dependencies]
@@ -36,8 +32,12 @@ rustix = { version = "1", features = ["termios"] }
 aho-log.workspace = true
 aho-types.workspace = true
 axum.workspace = true
+blake3.workspace = true
+cloud-draft.workspace = true
 tempfile.workspace = true
 parking_lot = "0.12"
+tar = "0.4"
+flate2 = "1"
 
 [lints]
 workspace = true

@@ -11,8 +11,10 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use cloud_api::ApiError;
 use cloud_api::internal::{
-    BuildJob, BuildResult, Deployment, DeploymentStatus, Maintenance, RunState, Scale, StartWorkspace, WorkspaceStarted, routes,
+    BuildJob, BuildResult, Deployment, DeploymentStatus, Maintenance, RunState, Scale, StartWorkspace, WorkspaceFileRef, WorkspacePackage,
+    WorkspaceRef, WorkspaceStarted, routes,
 };
+use cloud_api::{FileContent, FileEntry, FileKind, FileTree};
 use cloud_contract::ledger::Stage;
 use cloud_contract::manifest::{Build, Source};
 use cloud_control_plane::ports::*;
@@ -96,6 +98,48 @@ async fn fake_services(seen: Seen) -> String {
                 }))
             }),
         )
+        .route(
+            routes::WORKSPACE_PACKAGE,
+            post(|h: HeaderMap, Json(w): Json<WorkspaceRef>| async move {
+                authorized(&h)?;
+                match w.user_id.as_str() {
+                    "nobody" => Err((StatusCode::NOT_FOUND, Json(ApiError::new("not_found", "no such workspace")))),
+                    "hoarder" => Err((StatusCode::PAYLOAD_TOO_LARGE, Json(ApiError::new("too_large", "archive over 100 MiB")))),
+                    "forger" => Err((StatusCode::UNPROCESSABLE_ENTITY, Json(ApiError::new("invalid_session", "chain broken at entry 2")))),
+                    _ => Ok(Json(WorkspacePackage {
+                        archive: "AAEC".into(),
+                        archive_hash: format!("blake3:{}", "b".repeat(64)),
+                        files: 1,
+                        session: None,
+                        manifest: None,
+                        manifest_error: Some(format!("deploy.json in {}: unreadable", w.project)),
+                        draft: Default::default(),
+                    })),
+                }
+            }),
+        )
+        .route(
+            routes::WORKSPACE_FILES,
+            post(|h: HeaderMap, Json(w): Json<WorkspaceRef>| async move {
+                authorized(&h)?;
+                let path = format!("{}-{}.txt", w.project, w.user_id);
+                Ok::<_, (StatusCode, Json<ApiError>)>(Json(FileTree {
+                    files: vec![FileEntry { path, kind: FileKind::File, size: 2 }],
+                    truncated: true,
+                }))
+            }),
+        )
+        .route(
+            routes::WORKSPACE_FILE,
+            post(|h: HeaderMap, Json(f): Json<WorkspaceFileRef>| async move {
+                authorized(&h)?;
+                match f.path.as_str() {
+                    "src/main.rs" => Ok(Json(FileContent { path: f.path, size: 3, text: Some("fn ".into()), truncated: true })),
+                    "gone.rs" => Err((StatusCode::NOT_FOUND, Json(ApiError::new("not_found", "no such file")))),
+                    _ => Err((StatusCode::BAD_REQUEST, Json(ApiError::new("invalid", "path escapes the workspace")))),
+                }
+            }),
+        )
         .with_state(seen);
     serve(app).await
 }
@@ -146,4 +190,38 @@ async fn session_host_adapter_starts_workspaces() {
     let host = HttpSessionHost(client(&base, TOKEN));
     let w = host.start(StartWorkspace { project: "shop".into(), user_id: "u1".into(), session_id: Some("abc".into()) }).await.unwrap();
     assert_eq!((w.session_id.as_deref(), w.rpc_url.as_str()), (Some("abc"), "wss://host/rpc/shop"));
+}
+
+#[tokio::test]
+async fn session_host_adapter_packs_lists_and_reads_files_and_classifies_refusals() {
+    use cloud_control_plane::AppError;
+    let base = fake_services(Seen::default()).await;
+    let host = HttpSessionHost(client(&base, TOKEN));
+    let ws = |user: &str| WorkspaceRef { project: "shop".into(), user_id: user.into() };
+
+    let pkg = host.package(ws("u1")).await.unwrap();
+    assert_eq!((pkg.archive.as_str(), pkg.manifest_error.as_deref()), ("AAEC", Some("deploy.json in shop: unreadable")));
+    let tree = host.files(ws("u1")).await.unwrap();
+    assert_eq!((tree.files[0].path.as_str(), tree.truncated), ("shop-u1.txt", true));
+    let file = |path: &str| WorkspaceFileRef { project: "shop".into(), user_id: "u1".into(), path: path.into() };
+    assert_eq!(host.file(file("src/main.rs")).await.unwrap().text.as_deref(), Some("fn "));
+
+    // What the caller sees for each refusal: 404, 413 and other 4xx are theirs; auth is ours.
+    let status = |e: PortError| AppError::from(e).status();
+    let e = host.package(ws("nobody")).await.unwrap_err();
+    assert!(matches!(e, PortError::NotFound { .. }), "{e:?}");
+    assert_eq!(status(e), StatusCode::NOT_FOUND);
+    let e = host.package(ws("hoarder")).await.unwrap_err();
+    assert!(matches!(&e, PortError::TooLarge { message, .. } if message.contains("100 MiB")), "{e:?}");
+    assert_eq!(status(e), StatusCode::PAYLOAD_TOO_LARGE);
+    let e = host.package(ws("forger")).await.unwrap_err();
+    assert!(matches!(&e, PortError::Rejected { message, .. } if message.contains("chain broken")), "{e:?}");
+    assert_eq!(status(e), StatusCode::BAD_REQUEST);
+    let e = host.file(file("gone.rs")).await.unwrap_err();
+    assert_eq!(status(e), StatusCode::NOT_FOUND);
+    let e = host.file(file("../../etc/passwd")).await.unwrap_err();
+    assert!(matches!(&e, PortError::Rejected { message, .. } if message.contains("escapes")), "{e:?}");
+    let e = HttpSessionHost(client(&base, "wrong")).files(ws("u1")).await.unwrap_err();
+    assert!(matches!(e, PortError::Status { status: 401, .. }), "a bad service token is not the caller's fault: {e:?}");
+    assert_eq!(status(e), StatusCode::BAD_GATEWAY);
 }

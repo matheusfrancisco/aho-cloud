@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Api, ApiError, decodeError } from "../src/lib/api";
 import { currentSession, signIn } from "../src/lib/session";
+import { manifest } from "./fixtures";
 
 interface Call {
   url: string;
@@ -68,6 +69,26 @@ describe("Api routes", () => {
     const { fetch } = fakeFetch(() => new Response(null, { status: 204 }));
     const api = new Api({ fetch, token: () => "t" });
     await expect(api.approveDevice({ user_code: "WDJB-MJHT" })).resolves.toBeUndefined();
+  });
+
+  it("deploys the workspace with an empty body so its deploy.json is used, or with the confirmed manifest", async () => {
+    const { fetch, calls } = fakeFetch(() => json(200, { status: "needs_manifest", draft: { fields: {} } }));
+    const api = new Api({ fetch, token: () => "t" });
+    const first = await api.workspaceDeploy("shop");
+    expect(first.status).toBe("needs_manifest");
+    expect(calls[0]!.url).toBe("/v1/projects/shop/workspace/deploy");
+    expect(calls[0]!.method).toBe("POST");
+    expect(JSON.parse(calls[0]!.body!)).toEqual({});
+    await api.workspaceDeploy("shop", manifest);
+    expect(JSON.parse(calls[1]!.body!)).toEqual({ manifest });
+  });
+
+  it("reads a workspace file by its encoded path", async () => {
+    const { fetch, calls } = fakeFetch(() => json(200, { path: "src/a b.ts", size: 1, text: "x", truncated: false }));
+    const api = new Api({ fetch, token: () => "t" });
+    await api.workspaceFile("shop", "src/a b.ts?&#");
+    expect(calls[0]!.url).toBe("/v1/projects/shop/workspace/file?path=src%2Fa%20b.ts%3F%26%23");
+    expect(calls[0]!.method).toBe("GET");
   });
 });
 

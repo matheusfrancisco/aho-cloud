@@ -1,6 +1,6 @@
 // Draft helpers mirroring `cloud_contract::draft`: which fields need a human, and the manifest
 // JSON the fields assemble into. Drafts are treated as immutable values.
-import type { Draft, DraftField, Strength } from "../gen/contract";
+import type { Auth, DataClass, Draft, DraftField, Health, Strength } from "../gen/contract";
 
 /** Weakest first: the order the confirm screen shows them. */
 export const STRENGTHS: readonly Strength[] = ["inferred", "observed", "chained", "declared"];
@@ -39,6 +39,75 @@ export function byStrength(draft: Draft): Record<Strength, Array<[string, DraftF
     if (f !== undefined) groups[f.strength].push([k, f]);
   }
   return groups;
+}
+
+/** Manifest version the cloud accepts; not a human decision. */
+export const API_VERSION = "deploy.aho.cloud/v1";
+
+/** Required manifest fields no machine evidence supplied: a human must decide them. */
+export interface Missing {
+  auth: boolean;
+  data_class: boolean;
+  owner: boolean;
+  budget: boolean;
+  /** Indexes of processes without a health check, with whether each listens on a port. */
+  health: Array<{ index: number; name: string; port: number | null }>;
+  /** No process at all: nothing can be deployed until the code declares one. */
+  noProcesses: boolean;
+}
+
+export function missing(draft: Draft): Missing {
+  let v: Record<string, unknown>;
+  try {
+    v = draftToValue(draft);
+  } catch {
+    v = {};
+  }
+  const processes = Array.isArray(v["processes"]) ? (v["processes"] as Array<Record<string, unknown> | null>) : [];
+  const owner = v["owner"] as Record<string, unknown> | undefined;
+  return {
+    auth: v["auth"] === undefined,
+    data_class: v["data_class"] === undefined,
+    owner: owner === undefined || typeof owner["name"] !== "string" || typeof owner["email"] !== "string",
+    budget: v["budget"] === undefined,
+    health: processes.flatMap((p, index) =>
+      p === null || p["health"] !== undefined ? [] : [{ index, name: typeof p["name"] === "string" ? p["name"] : `process ${index}`, port: typeof p["port"] === "number" ? p["port"] : null }],
+    ),
+    noProcesses: processes.length === 0,
+  };
+}
+
+/** What the human chose for the fields in [`Missing`]. */
+export interface Choices {
+  auth: Auth;
+  data_class: DataClass;
+  /** Required with personal data. */
+  region?: string;
+  owner: { name: string; email: string };
+  ceiling_usd_month: number;
+  /** By process index. */
+  health: Record<number, Health>;
+}
+
+/** The draft with every missing field declared from `choices` (and the api version filled in). */
+export function complete(draft: Draft, m: Missing, choices: Choices): Draft {
+  let d = draft.fields["/api_version"] === undefined ? declare(draft, "/api_version", API_VERSION) : draft;
+  if (m.auth) d = declare(d, "/auth", choices.auth);
+  if (m.data_class) {
+    d = declare(d, "/data_class", choices.data_class);
+    if (choices.region !== undefined && choices.region !== "" && d.fields["/region"] === undefined) d = declare(d, "/region", choices.region);
+  }
+  if (m.owner) {
+    // Replace any partial owner fields rather than conflict with them.
+    const fields = Object.fromEntries(Object.entries(d.fields).filter(([k]) => k !== "/owner" && !k.startsWith("/owner/")));
+    d = declare({ fields }, "/owner", { name: choices.owner.name, email: choices.owner.email, escalation: [] });
+  }
+  if (m.budget) d = declare(d, "/budget", { ceiling_usd_month: choices.ceiling_usd_month, degrade: "sleep" });
+  for (const h of m.health) {
+    const chosen = choices.health[h.index];
+    if (chosen !== undefined) d = declare(d, `/processes/${h.index}/health`, chosen);
+  }
+  return d;
 }
 
 type Json = unknown;

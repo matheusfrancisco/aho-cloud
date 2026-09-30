@@ -10,6 +10,7 @@ use cloud_contract::draft::{Draft, DraftField};
 use cloud_contract::manifest::API_VERSION;
 use cloud_contract::validate::host_covered;
 use cloud_importers::Overruled;
+use cloud_workdir::declare_subtree;
 use serde_json::{Value, json};
 
 use crate::error::{Error, Result};
@@ -43,17 +44,10 @@ impl<R: BufRead, W: Write> Prompter<R, W> {
     }
 }
 
-/// Sets a whole subtree (`/source`, `/api_version`) as declared, replacing whatever was there.
-pub fn set(draft: &mut Draft, pointer: &str, value: Value) {
-    let inside = format!("{pointer}/");
-    draft.fields.retain(|k, _| k != pointer && !k.starts_with(&inside));
-    draft.declare(pointer, value);
-}
-
 /// Walks the human through `draft` and returns the manifest it becomes. `overruled` are machine
 /// values that lost to stronger ones (usually the existing `deploy.json`); they are reported.
 pub fn confirm<R: BufRead, W: Write>(draft: &mut Draft, overruled: &[Overruled], p: &mut Prompter<R, W>) -> Result<Manifest> {
-    set(draft, "/api_version", json!(API_VERSION));
+    declare_subtree(draft, "/api_version", json!(API_VERSION));
     for o in overruled {
         let from: Vec<&str> = o.offered.evidence.iter().map(|e| e.uri.as_str()).collect();
         p.say(&format!(
@@ -337,7 +331,7 @@ mod tests {
 
     fn base() -> Draft {
         let mut d = Draft::default();
-        set(&mut d, "/source", json!({"kind": "archive", "hash": format!("blake3:{}", "a".repeat(64))}));
+        declare_subtree(&mut d, "/source", json!({"kind": "archive", "hash": format!("blake3:{}", "a".repeat(64))}));
         d.offer("/build", json!({"kind": "dockerfile", "path": "Dockerfile", "context": "."}), Strength::Inferred, ev());
         d.offer("/processes/0/name", json!("web"), Strength::Inferred, ev());
         d.offer("/processes/0/port", json!(3000), Strength::Inferred, ev());

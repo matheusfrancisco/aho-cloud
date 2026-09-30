@@ -34,6 +34,9 @@ pub enum AppError {
     Tainted(String),
     #[error("{0}")]
     RateLimited(String),
+    /// Over a size limit; the `code` stays `invalid`, the status says why.
+    #[error("{0}")]
+    TooLarge(String),
     /// A port (builder, runtime, session host, DNS) failed; the request may be retried.
     #[error("{0}")]
     Upstream(String),
@@ -49,7 +52,7 @@ impl AppError {
             AppError::Forbidden(_) => "forbidden",
             AppError::NotFound(_) => "not_found",
             AppError::Conflict(_) => "conflict",
-            AppError::Invalid(_) => "invalid",
+            AppError::Invalid(_) | AppError::TooLarge(_) => "invalid",
             AppError::Refused { .. } => "refused",
             AppError::QuorumNotMet(_) => "quorum_not_met",
             AppError::Tainted(_) => "tainted",
@@ -65,6 +68,7 @@ impl AppError {
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Conflict(_) | AppError::QuorumNotMet(_) | AppError::Tainted(_) => StatusCode::CONFLICT,
             AppError::Invalid(_) => StatusCode::BAD_REQUEST,
+            AppError::TooLarge(_) => StatusCode::PAYLOAD_TOO_LARGE,
             AppError::Refused { .. } => StatusCode::UNPROCESSABLE_ENTITY,
             AppError::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
             AppError::Upstream(_) => StatusCode::BAD_GATEWAY,
@@ -133,9 +137,16 @@ impl From<SecretBoxError> for AppError {
     }
 }
 
+/// A service's "no such thing", "too large" and "refused" answers are the caller's to see; any
+/// other port failure is ours.
 impl From<PortError> for AppError {
     fn from(e: PortError) -> Self {
-        AppError::Upstream(e.to_string())
+        match e {
+            PortError::NotFound { message, .. } => AppError::NotFound(message),
+            PortError::TooLarge { message, .. } => AppError::TooLarge(message),
+            PortError::Rejected { message, .. } => AppError::Invalid(message),
+            PortError::Transport { .. } | PortError::Status { .. } | PortError::Decode { .. } => AppError::Upstream(e.to_string()),
+        }
     }
 }
 
@@ -158,7 +169,7 @@ impl From<LedgerError> for AppError {
         match e {
             L::UnknownRelease(_) => AppError::NotFound(message),
             L::InvalidManifest(refusals) => AppError::Refused { message, refusals },
-            L::InvalidReleaseId(_) | L::InvalidDigest(_) | L::RollbackTargetMissing | L::UnexpectedRelease { .. } => {
+            L::InvalidReleaseId(_) | L::InvalidDigest(_) | L::RollbackTargetMissing | L::UnexpectedRelease { .. } | L::NoMembers => {
                 AppError::Invalid(message)
             }
             L::DuplicateRelease(_)

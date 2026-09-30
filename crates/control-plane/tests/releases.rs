@@ -130,7 +130,9 @@ async fn refused_manifests_list_every_refusal_and_record_nothing() {
         )
         .await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "structurally invalid JSON body");
-    assert!(h.get_ok(&fill(routes::LEDGER, &[("p", "shop")]), &ana.token).await.as_array().unwrap().is_empty());
+    let ledger = h.get_ok(&fill(routes::LEDGER, &[("p", "shop")]), &ana.token).await;
+    let kinds: Vec<&Value> = ledger.as_array().unwrap().iter().map(|e| &e["body"]["kind"]).collect();
+    assert_eq!(kinds, [&json!("members_changed")], "only the member count recorded at project creation");
     assert!(h.builder.jobs().is_empty());
 
     let check = h.ok(routes::MANIFEST_CHECK, &ana.token, json!({"manifest": bad})).await;

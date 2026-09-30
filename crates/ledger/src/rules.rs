@@ -184,6 +184,12 @@ pub(crate) fn apply(st: &mut LedgerState, body: &LedgerBody, now: Option<u64>) -
             }
             st.policy = policy.clone();
         }
+        LedgerBody::MembersChanged { count } => {
+            if *count == 0 {
+                return Err(LedgerError::NoMembers);
+            }
+            st.members = Some(*count);
+        }
     }
     Ok(())
 }

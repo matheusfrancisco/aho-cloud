@@ -9,10 +9,17 @@
 //!    must be `hello`) the host spawns the configured command through a [`Spawner`] and pumps one
 //!    text message per NDJSON line in each direction ([`bridge`]).
 //! 3. The session id from `hello_ok` is persisted, so the next connection passes `--session`.
+//! 4. For the console's code view and "Deploy to preview" the control plane (service token)
+//!    reads the workspace without starting it: `WORKSPACE_FILES` (the tree a deploy ships),
+//!    `WORKSPACE_FILE` (one file) and `WORKSPACE_PACKAGE` (archive, verified session log,
+//!    `deploy.json` and draft), all `cloud-workdir` on the project directory. A tampered session
+//!    log refuses the package with `422 invalid_session`, so a deploy never loses its
+//!    attestation silently.
 
 #![forbid(unsafe_code)]
 
 pub mod bridge;
+mod content;
 pub mod limits;
 pub mod server;
 pub mod spawn;

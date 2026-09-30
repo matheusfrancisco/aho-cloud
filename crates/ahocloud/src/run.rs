@@ -15,14 +15,13 @@ use cloud_contract::draft::Draft;
 use cloud_contract::ledger::{Provenance, Stage};
 use cloud_contract::policy::StandingOrder;
 use cloud_importers::Overruled;
-use serde_json::json;
 
 use crate::cli::{
     Cli, Command, DEFAULT_API_URL, DeployArgs, DomainsCmd, GrantArgs, ManifestCmd, ReleaseCmd, SecretsCmd, StandingOrdersCmd,
 };
 use crate::creds::{self, Credentials};
 use crate::error::{Error, Result};
-use crate::{archive, card, confirm, sign};
+use crate::{card, confirm, sign};
 
 struct Ctx {
     api_url: Option<String>,
@@ -132,16 +131,6 @@ async fn whoami(ctx: &Ctx) -> Result<ExitCode> {
 
 // ---- manifests ------------------------------------------------------------------------------
 
-fn read_manifest(path: &Path) -> Result<Option<Manifest>> {
-    match std::fs::read_to_string(path) {
-        Ok(text) => {
-            Manifest::from_json(&text).map(Some).map_err(|e| Error::Invalid(format!("{}: not a deploy manifest: {e}", path.display())))
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(Error::io(path)(e)),
-    }
-}
-
 fn write_manifest(path: &Path, m: &Manifest) -> Result<()> {
     let mut text = serde_json::to_string_pretty(m).map_err(|e| Error::Invalid(e.to_string()))?;
     text.push('\n');
@@ -156,21 +145,18 @@ fn edge_text(dir: &Path) -> Result<Option<String>> {
     std::fs::read_to_string(&path).map(Some).map_err(Error::io(path))
 }
 
-/// The existing `deploy.json` (declared), then repo files, then the session, merged.
+/// The existing `deploy.json` (declared), then repo files, then the session, merged; says which
+/// files were read and what could not be.
 fn assemble(dir: &Path, session: Option<&Draft>) -> Result<(Draft, Vec<Overruled>)> {
-    let mut draft = read_manifest(&dir.join("deploy.json"))?.map(|m| cloud_importers::from_manifest(&m)).unwrap_or_default();
-    let scan = cloud_importers::scan(dir);
-    if !scan.found.is_empty() {
-        eprintln!("read {}", scan.found.join(", "));
+    let manifest = cloud_workdir::read_manifest(dir)?;
+    let a = cloud_workdir::assemble(dir, manifest.as_ref(), session);
+    if !a.found.is_empty() {
+        eprintln!("read {}", a.found.join(", "));
     }
-    for p in &scan.problems {
+    for p in &a.problems {
         eprintln!("note: {p}");
     }
-    let mut overruled = cloud_importers::merge(&mut draft, &scan.draft);
-    if let Some(s) = session {
-        overruled.extend(cloud_importers::merge(&mut draft, s));
-    }
-    Ok((draft, overruled))
+    Ok((a.draft, a.overruled))
 }
 
 fn confirm_stdio(draft: &mut Draft, overruled: &[Overruled], accept_inferred: bool) -> Result<Manifest> {
@@ -182,9 +168,9 @@ fn confirm_stdio(draft: &mut Draft, overruled: &[Overruled], accept_inferred: bo
 fn manifest_init(dir: &Path, accept_inferred: bool) -> Result<ExitCode> {
     let (mut draft, overruled) = assemble(dir, None)?;
     if !draft.fields.keys().any(|k| k == "/source" || k.starts_with("/source/")) {
-        let a = archive::pack(dir)?;
+        let a = cloud_workdir::pack(dir)?;
         eprintln!("source: this directory as an archive, {} ({} files); `ahocloud deploy` uploads it", a.hash, a.files.len());
-        confirm::set(&mut draft, "/source", json!({"kind": "archive", "hash": a.hash}));
+        a.declare_source(&mut draft);
     }
     let manifest = confirm_stdio(&mut draft, &overruled, accept_inferred)?;
     let path = dir.join("deploy.json");
@@ -217,51 +203,6 @@ fn manifest_check(file: &Path, edge: Option<&Path>) -> Result<ExitCode> {
 }
 
 // ---- deploy ---------------------------------------------------------------------------------
-
-struct LoadedSession {
-    draft: Draft,
-    summary: cloud_draft::SessionSummary,
-    bytes: Vec<u8>,
-}
-
-/// Newest `*.jsonl` in `DIR/.aho/sessions` by modification time (then name).
-fn newest_session(dir: &Path) -> Result<Option<PathBuf>> {
-    let sessions = dir.join(".aho").join("sessions");
-    let entries = match std::fs::read_dir(&sessions) {
-        Ok(e) => e,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(Error::io(sessions)(e)),
-    };
-    let mut best: Option<(std::time::SystemTime, PathBuf)> = None;
-    for entry in entries {
-        let entry = entry.map_err(Error::io(&sessions))?;
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("jsonl") || !path.is_file() {
-            continue;
-        }
-        let modified = entry.metadata().and_then(|m| m.modified()).map_err(Error::io(&path))?;
-        if best.as_ref().is_none_or(|(t, p)| (modified, &path) > (*t, p)) {
-            best = Some((modified, path));
-        }
-    }
-    Ok(best.map(|(_, p)| p))
-}
-
-/// Reads and verifies a session log; its id is the file stem, as aho names them.
-fn load_session(path: &Path) -> Result<LoadedSession> {
-    let bytes = std::fs::read(path).map_err(Error::io(path))?;
-    let text = std::str::from_utf8(&bytes).map_err(|_| Error::Invalid(format!("{} is not UTF-8", path.display())))?;
-    let id = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .ok_or_else(|| Error::Invalid(format!("{} has no session id in its name", path.display())))?;
-    let session_err = |source| Error::Session { path: path.to_owned(), source };
-    let entries = cloud_draft::verify_jsonl(text).map_err(session_err)?;
-    let summary = cloud_draft::SessionSummary::of(id, &entries).ok_or_else(|| session_err(cloud_draft::Error::Empty))?;
-    let draft = cloud_draft::draft_from_entries(id, &entries);
-    eprintln!("drafting from aho session {id} ({} entries, chain verified)", summary.entries);
-    Ok(LoadedSession { draft, summary, bytes })
-}
 
 async fn ensure_project(client: &Client, project: &str, org: Option<&str>) -> Result<()> {
     match client.project(project).await {
@@ -297,18 +238,19 @@ async fn deploy(ctx: &Ctx, args: DeployArgs) -> Result<ExitCode> {
     let dir = args.dir.as_path();
     let session_path = match &args.session {
         Some(p) => Some(p.clone()),
-        None => newest_session(dir)?,
+        None => cloud_workdir::newest_session(dir)?,
     };
-    let session = session_path.as_deref().map(load_session).transpose()?;
-    if session.is_none() {
-        eprintln!("no aho session in {}; the release will be unattested", dir.join(".aho/sessions").display());
+    let session = session_path.as_deref().map(cloud_workdir::load_session).transpose()?;
+    match &session {
+        Some(s) => eprintln!("drafting from aho session {} ({} entries, chain verified)", s.id, s.summary.entries),
+        None => eprintln!("no aho session in {}; the release will be unattested", cloud_workdir::sessions_dir(dir).display()),
     }
     let (mut draft, overruled) = assemble(dir, session.as_ref().map(|s| &s.draft))?;
-    let archive = archive::pack(dir)?;
+    let archive = cloud_workdir::pack(dir)?;
     for f in archive.env_files() {
         eprintln!("warning: {f} is not gitignored, so it is uploaded with the source");
     }
-    confirm::set(&mut draft, "/source", json!({"kind": "archive", "hash": archive.hash}));
+    archive.declare_source(&mut draft);
     let manifest = confirm_stdio(&mut draft, &overruled, args.accept_inferred)?;
     if let Some(p) = &ctx.project
         && *p != manifest.project

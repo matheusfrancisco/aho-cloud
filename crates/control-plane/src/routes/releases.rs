@@ -71,6 +71,15 @@ pub async fn propose(
     ApiJson(body): ApiJson<ProposeRelease>,
 ) -> Result<(StatusCode, Json<Release>), AppError> {
     let (project, _) = project_access(&st, &user, &p).await?;
+    let release = propose_release(&st, &project.slug, Proposer::User { user_id: user.id }, body).await?;
+    Ok((StatusCode::CREATED, Json(release)))
+}
+
+/// The one proposal pipeline (`POST releases` and workspace deploys): every manifest refusal at
+/// once, the manifest must name `project`, attested provenance must name a session uploaded here
+/// with a verified chain, an archive source must be an archive uploaded here; then the proposal
+/// is recorded and its build → taint scan → Preview activation starts in the background.
+pub(super) async fn propose_release(st: &AppState, project: &str, proposer: Proposer, body: ProposeRelease) -> Result<Release, AppError> {
     let check = CheckResult::of(&body.manifest, body.edge_toml.as_deref());
     if !check.accepted() {
         let mut message = format!("manifest refused: {} refusal(s)", check.refusals.len());
@@ -79,26 +88,25 @@ pub async fn propose(
         }
         return Err(AppError::Refused { message, refusals: check.refusals });
     }
-    if body.manifest.project != project.slug {
-        return Err(AppError::invalid(format!("manifest is for project `{}`, not `{}`", body.manifest.project, project.slug)));
+    if body.manifest.project != project {
+        return Err(AppError::invalid(format!("manifest is for project `{}`, not `{project}`", body.manifest.project)));
     }
     if let Provenance::Attested { session_id, head_hash } = &body.provenance
-        && st.store.session(&project.slug, session_id, head_hash).await?.is_none()
+        && st.store.session(project, session_id, head_hash).await?.is_none()
     {
         return Err(AppError::invalid(format!(
             "attested provenance names session {session_id} at {head_hash}, which was not uploaded to this project with a verified chain"
         )));
     }
     if let Source::Archive { hash } = &body.manifest.source
-        && st.store.blob(&project.slug, hash).await?.is_none_or(|b| b.kind != crate::store::BlobKind::Archive)
+        && st.store.blob(project, hash).await?.is_none_or(|b| b.kind != crate::store::BlobKind::Archive)
     {
         return Err(AppError::invalid(format!("archive {hash} was not uploaded to this project")));
     }
     let release = format!("r-{}", crate::crypto::hex(&random_bytes(6)));
-    let ledger = st.ledgers.get(&project.slug)?;
-    ledger.propose(&release, body.manifest.clone(), body.provenance, Proposer::User { user_id: user.id.clone() })?;
-    ops::enqueue_build(&st, &project.slug, &release, body.manifest, body.edge_toml).await?;
-    Ok((StatusCode::CREATED, Json(release_view(&st, &project.slug, &release).await?)))
+    st.ledgers.get(project)?.propose(&release, body.manifest.clone(), body.provenance, proposer)?;
+    ops::enqueue_build(st, project, &release, body.manifest, body.edge_toml).await?;
+    release_view(st, project, &release).await
 }
 
 pub async fn approve(

@@ -176,6 +176,11 @@ pub enum LedgerBody {
         policy: crate::policy::ReleasePolicy,
         approver: Approver,
     },
+    /// The owning org's member count changed (or was first recorded). No approval quorum can
+    /// exceed it: a one-person org needs its owner, not a second approver who does not exist.
+    MembersChanged {
+        count: u16,
+    },
 }
 
 impl LedgerBody {
@@ -193,6 +198,7 @@ impl LedgerBody {
             LedgerBody::StandingOrdersGranted { .. } => "standing_orders_granted",
             LedgerBody::StandingOrderExecuted { .. } => "standing_order_executed",
             LedgerBody::PolicyChanged { .. } => "policy_changed",
+            LedgerBody::MembersChanged { .. } => "members_changed",
         }
     }
 }

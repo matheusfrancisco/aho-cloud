@@ -6,7 +6,6 @@
 
 #![forbid(unsafe_code)]
 
-mod archive;
 mod card;
 mod cli;
 mod confirm;

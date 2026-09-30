@@ -41,17 +41,27 @@ const SPOOFABLE: [&str; 7] = [
     "expect",
 ];
 
-/// The request's target host.
+/// The request's target host, and the scheme it arrived over.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Host {
     /// Lowercase hostname without port or trailing dot: the directory key.
     pub name: String,
     /// `name[:port]` as the client addressed it.
     pub authority: String,
+    /// `https` on the TLS listener, `http` on the plain one.
+    pub scheme: &'static str,
+}
+
+impl Host {
+    /// `scheme://authority`: what the browser calls this site's origin, and the base of every
+    /// absolute URL the edge hands out (OIDC redirect URI, magic links).
+    pub fn origin(&self) -> String {
+        format!("{}://{}", self.scheme, self.authority)
+    }
 }
 
 /// Host from the URI authority (h2 `:authority`, absolute-form h1) or the `Host` header.
-pub(crate) fn host_of(uri: &Uri, headers: &HeaderMap) -> Option<Host> {
+pub(crate) fn host_of(uri: &Uri, headers: &HeaderMap, scheme: &'static str) -> Option<Host> {
     let raw = match uri.authority() {
         Some(a) => a.as_str().to_owned(),
         None => headers.get(header::HOST)?.to_str().ok()?.to_owned(),
@@ -73,7 +83,7 @@ pub(crate) fn host_of(uri: &Uri, headers: &HeaderMap) -> Option<Host> {
         Some(p) => format!("{name}:{p}"),
         None => name.to_owned(),
     };
-    Some(Host { name: name.to_owned(), authority })
+    Some(Host { name: name.to_owned(), authority, scheme })
 }
 
 /// Canonical form of a request path, used both for route matching and as the path forwarded to
@@ -287,20 +297,26 @@ mod tests {
     #[test]
     fn host_prefers_authority_and_drops_port_case_and_dot() {
         let uri: Uri = "/x".parse().unwrap();
-        let h = host_of(&uri, &headers(&[("host", "App.Example.COM.:8443")])).unwrap();
+        let h = host_of(&uri, &headers(&[("host", "App.Example.COM.:8443")]), "https").unwrap();
         assert_eq!(h.name, "app.example.com");
         assert_eq!(h.authority, "app.example.com:8443");
+        assert_eq!(h.origin(), "https://app.example.com:8443");
         let abs: Uri = "https://other.example/x".parse().unwrap();
-        assert_eq!(host_of(&abs, &headers(&[("host", "app.example.com")])).unwrap().name, "other.example");
+        assert_eq!(host_of(&abs, &headers(&[("host", "app.example.com")]), "https").unwrap().name, "other.example");
+        // The plain listener's links must point back at the plain listener.
+        assert_eq!(
+            host_of(&uri, &headers(&[("host", "shop.preview.localhost:8443")]), "http").unwrap().origin(),
+            "http://shop.preview.localhost:8443"
+        );
     }
 
     #[test]
     fn host_rejects_garbage() {
         let uri: Uri = "/".parse().unwrap();
         for bad in ["", "a b", "[::1]:80", "host:port", "exa$mple.com"] {
-            assert!(host_of(&uri, &headers(&[("host", bad)])).is_none(), "{bad}");
+            assert!(host_of(&uri, &headers(&[("host", bad)]), "https").is_none(), "{bad}");
         }
-        assert!(host_of(&uri, &HeaderMap::new()).is_none());
+        assert!(host_of(&uri, &HeaderMap::new(), "https").is_none());
     }
 
     #[test]

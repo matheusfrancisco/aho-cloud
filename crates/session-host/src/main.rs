@@ -68,6 +68,15 @@ struct Cli {
     /// Largest child output line, in bytes.
     #[arg(long, default_value_t = Limits::DEFAULT.max_line_bytes)]
     max_line_bytes: usize,
+    /// Largest workspace archive a deploy package may carry (compressed), in bytes.
+    #[arg(long, default_value_t = Limits::DEFAULT.max_archive_bytes)]
+    max_archive_bytes: u64,
+    /// Most text a workspace file read returns, in bytes.
+    #[arg(long, default_value_t = Limits::DEFAULT.max_file_bytes)]
+    max_file_bytes: u64,
+    /// Most entries a workspace file tree lists.
+    #[arg(long, default_value_t = Limits::DEFAULT.max_tree_entries)]
+    max_tree_entries: usize,
 }
 
 impl Cli {
@@ -87,6 +96,9 @@ impl Cli {
                 kill_grace: Duration::from_secs(self.kill_grace_secs),
                 max_frame_bytes: self.max_frame_bytes,
                 max_line_bytes: self.max_line_bytes,
+                max_archive_bytes: self.max_archive_bytes,
+                max_file_bytes: self.max_file_bytes,
+                max_tree_entries: self.max_tree_entries,
             },
         })
     }

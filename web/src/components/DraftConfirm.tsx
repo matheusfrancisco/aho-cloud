@@ -1,8 +1,9 @@
 // Confirm screen for a manifest draft: every machine-derived field shows its evidence; weak ones
 // (inferred, observed) must be confirmed or corrected before the draft can be submitted.
 import { useState } from "react";
-import type { Draft, DraftField, Strength } from "../gen/contract";
-import { byStrength, confirm, declare, needsConfirmation, STRENGTHS, unconfirmed } from "../lib/draft";
+import type { Auth, DataClass, Draft, DraftField, Health, Strength } from "../gen/contract";
+import { byStrength, complete, confirm, declare, type Missing, missing, needsConfirmation, STRENGTHS, unconfirmed } from "../lib/draft";
+import { useSession } from "../lib/session";
 import { Badge } from "../ui/common";
 
 const STRENGTH_TEXT: Record<Strength, { title: string; hint: string }> = {
@@ -88,10 +89,139 @@ function FieldRow({ pointer, field, onConfirm, onCorrect }: { pointer: string; f
   );
 }
 
+const AUTH_CHOICES: Array<{ key: string; label: string; auth: Auth }> = [
+  { key: "magic_link", label: "Email sign-in link (works locally)", auth: { mode: "magic_link", allowed_domains: [] } },
+  { key: "none", label: "None: the app is public", auth: { mode: "none" } },
+  { key: "password", label: "One shared password", auth: { mode: "password" } },
+  { key: "google", label: "Google", auth: { mode: "oidc", provider: { kind: "google" } } },
+  { key: "github", label: "GitHub", auth: { mode: "oidc", provider: { kind: "github" } } },
+  { key: "microsoft", label: "Microsoft", auth: { mode: "oidc", provider: { kind: "microsoft" } } },
+  { key: "app_owned", label: "The app signs users in itself", auth: { mode: "app_owned" } },
+];
+
+interface Answers {
+  auth: string;
+  data_class: DataClass;
+  region: string;
+  ownerName: string;
+  ownerEmail: string;
+  ceiling: string;
+  /** Health path (port) or command (no port) per process index. */
+  health: Record<number, string>;
+}
+
+/** Why the answers cannot be used yet, or `null`. */
+function answersProblem(need: Missing, a: Answers): string | null {
+  if (need.noProcesses) return "No process was found. Ask aho to add a Dockerfile (with EXPOSE) or a Procfile.";
+  if (need.owner && (a.ownerName.trim() === "" || !a.ownerEmail.includes("@"))) return "Give the owner's name and email.";
+  if (need.budget && !(Number(a.ceiling) >= 1)) return "The monthly ceiling must be at least $1.";
+  if (need.data_class && a.data_class === "pii" && a.region.trim() === "") return "Personal data needs a region.";
+  for (const h of need.health) {
+    if ((a.health[h.index] ?? (h.port === null ? "" : "/")).trim() === "") return `Say how to check that ${h.name} is healthy.`;
+  }
+  return null;
+}
+
+function RequiredFields({ need, answers, onChange }: { need: Missing; answers: Answers; onChange: (a: Answers) => void }) {
+  const set = (patch: Partial<Answers>) => onChange({ ...answers, ...patch });
+  return (
+    <div className="required-fields" aria-label="required fields">
+      <h3>Needed to deploy</h3>
+      <p className="hint">Nothing in the code decides these; choose them.</p>
+      {need.noProcesses && <p className="error">No process was found. Ask aho to add a Dockerfile (with EXPOSE) or a Procfile.</p>}
+      {need.auth && (
+        <label>
+          Who can open the app
+          <select value={answers.auth} onChange={(e) => set({ auth: e.target.value })}>
+            {AUTH_CHOICES.map((c) => (
+              <option key={c.key} value={c.key}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {need.health.map((h) => (
+        <label key={h.index}>
+          {h.port === null ? `Health command for ${h.name} (exit 0 = healthy)` : `Health check path for ${h.name} (:${h.port})`}
+          <input
+            value={answers.health[h.index] ?? (h.port === null ? "" : "/")}
+            placeholder={h.port === null ? "e.g. test -f /tmp/ready" : "/"}
+            onChange={(e) => set({ health: { ...answers.health, [h.index]: e.target.value } })}
+          />
+        </label>
+      ))}
+      {need.data_class && (
+        <label>
+          Data it stores
+          <select value={answers.data_class} onChange={(e) => set({ data_class: e.target.value as DataClass })}>
+            <option value="none">No personal data</option>
+            <option value="pii">Personal data (needs a region)</option>
+          </select>
+        </label>
+      )}
+      {need.data_class && answers.data_class === "pii" && (
+        <label>
+          Region
+          <input value={answers.region} placeholder="eu-west" onChange={(e) => set({ region: e.target.value })} />
+        </label>
+      )}
+      {need.owner && (
+        <>
+          <label>
+            Owner name
+            <input value={answers.ownerName} onChange={(e) => set({ ownerName: e.target.value })} />
+          </label>
+          <label>
+            Owner email (who gets called when it breaks)
+            <input type="email" value={answers.ownerEmail} onChange={(e) => set({ ownerEmail: e.target.value })} />
+          </label>
+        </>
+      )}
+      {need.budget && (
+        <label>
+          Monthly ceiling in USD (the app sleeps when reached)
+          <input type="number" min={1} value={answers.ceiling} onChange={(e) => set({ ceiling: e.target.value })} />
+        </label>
+      )}
+    </div>
+  );
+}
+
+function withAnswers(draft: Draft, need: Missing, a: Answers): Draft {
+  const health: Record<number, Health> = {};
+  for (const h of need.health) {
+    const text = (a.health[h.index] ?? (h.port === null ? "" : "/")).trim();
+    health[h.index] = h.port === null ? { kind: "command", argv: text.split(/\s+/) } : { kind: "http", path: text.startsWith("/") ? text : `/${text}`, port: null };
+  }
+  const auth = AUTH_CHOICES.find((c) => c.key === a.auth)?.auth ?? { mode: "none" };
+  return complete(draft, need, {
+    auth,
+    data_class: a.data_class,
+    region: a.region.trim(),
+    owner: { name: a.ownerName.trim(), email: a.ownerEmail.trim() },
+    ceiling_usd_month: Math.floor(Number(a.ceiling)),
+    health,
+  });
+}
+
 export function DraftConfirm({ draft: initial, onSubmit, submitting = false, submitLabel = "Propose release" }: { draft: Draft; onSubmit: (draft: Draft) => void; submitting?: boolean; submitLabel?: string }) {
+  const session = useSession();
   const [draft, setDraft] = useState(initial);
+  const [answers, setAnswers] = useState<Answers>({
+    auth: "magic_link",
+    data_class: "none",
+    region: "",
+    ownerName: session?.user.name ?? "",
+    ownerEmail: session?.user.email ?? "",
+    ceiling: "20",
+    health: {},
+  });
   const pending = unconfirmed(draft);
   const groups = byStrength(draft);
+  const need = missing(draft);
+  const needsAnswers = need.auth || need.data_class || need.owner || need.budget || need.health.length > 0 || need.noProcesses;
+  const problem = needsAnswers ? answersProblem(need, answers) : null;
 
   return (
     <section className="card draft-confirm" aria-label="draft confirmation">
@@ -112,11 +242,16 @@ export function DraftConfirm({ draft: initial, onSubmit, submitting = false, sub
           </div>
         ),
       )}
+      {needsAnswers && <RequiredFields need={need} answers={answers} onChange={setAnswers} />}
       <div className="row">
-        <button type="button" disabled={pending.length > 0 || submitting} onClick={() => onSubmit(draft)}>
+        <button
+          type="button"
+          disabled={pending.length > 0 || problem !== null || submitting}
+          onClick={() => onSubmit(needsAnswers ? withAnswers(draft, need, answers) : draft)}
+        >
           {submitting ? "Submitting…" : submitLabel}
         </button>
-        {pending.length > 0 && <span className="muted">Confirm or correct the highlighted fields first.</span>}
+        {pending.length > 0 ? <span className="muted">Confirm or correct the highlighted fields first.</span> : problem !== null && <span className="muted">{problem}</span>}
       </div>
     </section>
   );

@@ -443,10 +443,10 @@ dependencies = [
  "cloud-contract",
  "cloud-draft",
  "cloud-importers",
+ "cloud-workdir",
  "ed25519-dalek",
  "flate2",
  "hostname",
- "ignore",
  "parking_lot",
  "rand_core 0.6.4",
  "rustix 1.1.5",
@@ -1222,12 +1222,17 @@ dependencies = [
 name = "cloud-session-host"
 version = "0.0.1"
 dependencies = [
+ "aho-log",
+ "aho-types",
  "axum",
  "base64 0.22.1",
  "blake3",
  "clap",
  "cloud-api",
  "cloud-contract",
+ "cloud-draft",
+ "cloud-workdir",
+ "flate2",
  "futures",
  "hmac 0.12.1",
  "reqwest",
@@ -1235,12 +1240,32 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "subtle",
+ "tar",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tokio-tungstenite",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "cloud-workdir"
+version = "0.0.1"
+dependencies = [
+ "aho-log",
+ "aho-types",
+ "blake3",
+ "cloud-api",
+ "cloud-contract",
+ "cloud-draft",
+ "cloud-importers",
+ "flate2",
+ "ignore",
+ "serde_json",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

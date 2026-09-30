@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Entry, Event } from "../src/aho";
-import { ConnectionClosed, RpcClient, RpcError, type SocketLike, type Status } from "../src/lib/rpc";
+import { CLOSE_REPLACED, ConnectionClosed, RpcClient, RpcError, type SocketLike, type Status } from "../src/lib/rpc";
 
 /** An in-memory WebSocket: records what the client sends; the test plays the server. */
 class FakeSocket implements SocketLike {
@@ -240,5 +240,19 @@ describe("RpcClient reconnect", () => {
     await vi.advanceTimersByTimeAsync(10_000);
     expect(FakeSocket.all).toHaveLength(3);
     expect(c.status).toBe("closed");
+  });
+
+  it("does not reconnect when another window took the workspace over", async () => {
+    const statuses: Array<[Status, string | undefined]> = [];
+    const c = client({ onStatus: (s, d) => statuses.push([s, d]) });
+    const s1 = await connected(c);
+    const inflight = c.prompt("hi");
+    s1.readyState = 3;
+    s1.onclose?.({ code: CLOSE_REPLACED, reason: "replaced by a newer connection" });
+    await expect(inflight).rejects.toBeInstanceOf(ConnectionClosed);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(FakeSocket.all).toHaveLength(1);
+    expect(c.status).toBe("closed");
+    expect(statuses.at(-1)?.[1]).toContain("another window");
   });
 });

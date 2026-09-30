@@ -6,8 +6,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use cloud_api::ApiError;
 use cloud_api::internal::{
-    BuildJob, BuildResult, Deployment, DeploymentStatus, Maintenance, Scale, StartWorkspace, WorkspaceStarted, routes,
+    BuildJob, BuildResult, Deployment, DeploymentStatus, Maintenance, Scale, StartWorkspace, WorkspaceFileRef, WorkspacePackage,
+    WorkspaceRef, WorkspaceStarted, routes,
 };
+use cloud_api::{FileContent, FileTree};
 use cloud_contract::ledger::Stage;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -20,6 +22,31 @@ pub enum PortError {
     Status { service: &'static str, status: u16, message: String },
     #[error("{service}: unreadable response: {message}")]
     Decode { service: &'static str, message: String },
+    /// The service has no such thing (no workspace, no file at that path).
+    #[error("{service}: {message}")]
+    NotFound { service: &'static str, message: String },
+    /// What was asked for is over the service's limits.
+    #[error("{service}: too large: {message}")]
+    TooLarge { service: &'static str, message: String },
+    /// The service refused the request itself (e.g. a path escaping the workspace).
+    #[error("{service}: {message}")]
+    Rejected { service: &'static str, message: String },
+}
+
+impl PortError {
+    /// Reads a 4xx answer as the caller's problem: 404 → [`PortError::NotFound`], 413 →
+    /// [`PortError::TooLarge`], any other 4xx but 401/403 (the service token, i.e. ours) →
+    /// [`PortError::Rejected`]. Everything else is unchanged.
+    pub fn classify(self) -> Self {
+        match self {
+            PortError::Status { service, status: 404, message } => PortError::NotFound { service, message },
+            PortError::Status { service, status: 413, message } => PortError::TooLarge { service, message },
+            PortError::Status { service, status, message } if (400..500).contains(&status) && status != 401 && status != 403 => {
+                PortError::Rejected { service, message }
+            }
+            other => other,
+        }
+    }
 }
 
 /// Source → image. Synchronous from the caller's point of view; may take minutes.
@@ -40,10 +67,16 @@ pub trait RuntimeService: Send + Sync {
     async fn sleep(&self, project: &str, stage: Stage) -> Result<(), PortError>;
 }
 
-/// Entry A: aho workspaces.
+/// Entry A: aho workspaces, one per `(project, user)`.
 #[async_trait]
 pub trait SessionHostService: Send + Sync {
     async fn start(&self, request: StartWorkspace) -> Result<WorkspaceStarted, PortError>;
+    /// The workspace packed for a deploy: archive, newest session log, `deploy.json`, draft.
+    async fn package(&self, workspace: WorkspaceRef) -> Result<WorkspacePackage, PortError>;
+    /// What a deploy of the workspace would ship.
+    async fn files(&self, workspace: WorkspaceRef) -> Result<FileTree, PortError>;
+    /// One file of the workspace.
+    async fn file(&self, file: WorkspaceFileRef) -> Result<FileContent, PortError>;
 }
 
 /// An authenticated JSON client for one internal service.
@@ -177,9 +210,28 @@ impl RuntimeService for HttpRuntime {
 /// The session host over HTTP.
 pub struct HttpSessionHost(pub ServiceClient);
 
+impl HttpSessionHost {
+    /// `POST` whose 4xx answers are [`PortError::classify`]d.
+    async fn workspace_call<B: Serialize, T: DeserializeOwned>(&self, path: &str, body: &B) -> Result<T, PortError> {
+        self.0.call(reqwest::Method::POST, path, Some(body)).await.map_err(PortError::classify)
+    }
+}
+
 #[async_trait]
 impl SessionHostService for HttpSessionHost {
     async fn start(&self, request: StartWorkspace) -> Result<WorkspaceStarted, PortError> {
         self.0.call(reqwest::Method::POST, routes::WORKSPACES, Some(&request)).await
+    }
+
+    async fn package(&self, workspace: WorkspaceRef) -> Result<WorkspacePackage, PortError> {
+        self.workspace_call(routes::WORKSPACE_PACKAGE, &workspace).await
+    }
+
+    async fn files(&self, workspace: WorkspaceRef) -> Result<FileTree, PortError> {
+        self.workspace_call(routes::WORKSPACE_FILES, &workspace).await
+    }
+
+    async fn file(&self, file: WorkspaceFileRef) -> Result<FileContent, PortError> {
+        self.workspace_call(routes::WORKSPACE_FILE, &file).await
     }
 }

@@ -22,6 +22,10 @@ pub struct LedgerState {
     /// Target of the last executed standing-order rollback not yet activated.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) standing_rollback: Option<String>,
+    /// The org's member count, as last recorded. Caps every approval quorum; `None` (never
+    /// recorded) leaves the policy as written.
+    #[serde(default)]
+    pub members: Option<u16>,
 }
 
 /// One proposed release and everything recorded about it since.
@@ -115,12 +119,19 @@ impl LedgerState {
     }
 
     /// Approvals `release` needs to be activated at `stage`: none at Preview, otherwise the policy
-    /// applied to [`Self::diff_against_live`].
+    /// applied to [`Self::diff_against_live`], capped at the recorded member count.
     pub fn requirement(&self, release: &str, stage: Stage) -> Option<Requirement> {
         let d = self.diff_against_live(release)?;
         Some(match stage {
             Stage::Preview => Requirement { approvals: 0, owner_required: false },
-            Stage::Staging | Stage::Live => self.policy.requirement(&d),
+            Stage::Staging | Stage::Live => {
+                let mut r = self.policy.requirement(&d);
+                // A quorum larger than the org can never be met: cap it at the humans there are.
+                if let Some(members) = self.members {
+                    r.approvals = r.approvals.min(u8::try_from(members).unwrap_or(u8::MAX)).max(1);
+                }
+                r
+            }
         })
     }
 

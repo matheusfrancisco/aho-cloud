@@ -28,6 +28,7 @@ pub trait ProjectLedger: Send + Sync {
     fn grant_standing_orders(&self, orders: Vec<StandingOrder>, expires_at: u64, approver: Approver) -> Result<(), LedgerError>;
     fn execute_standing_order(&self, action: OnCallAction, release: Option<&str>, actor: &str, now: u64) -> Result<(), LedgerError>;
     fn set_policy(&self, policy: ReleasePolicy, approver: Approver) -> Result<(), LedgerError>;
+    fn members_changed(&self, count: u16) -> Result<(), LedgerError>;
     fn audit(&self, verify: &dyn Fn(&Approver, &[u8]) -> bool) -> Result<(), LedgerError>;
 }
 
@@ -76,6 +77,9 @@ where
     }
     fn set_policy(&self, policy: ReleasePolicy, approver: Approver) -> Result<(), LedgerError> {
         Ledger::set_policy(self, policy, approver)
+    }
+    fn members_changed(&self, count: u16) -> Result<(), LedgerError> {
+        Ledger::members_changed(self, count)
     }
     fn audit(&self, verify: &dyn Fn(&Approver, &[u8]) -> bool) -> Result<(), LedgerError> {
         Ledger::audit(self, verify)

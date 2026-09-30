@@ -1,17 +1,18 @@
-// Entry A: the browser talks aho rpc to a workspace session. The agent drafts a manifest; the
-// human confirms it here, and the console uploads the session log (the provenance) and proposes.
+// Entry A: the browser talks aho rpc to the project's workspace session. Prompts, the live
+// transcript, aho's tool-approval cards, and abort. When aho drafts a manifest, the human
+// confirms it here and the console uploads the session log (the provenance) and proposes.
 import { useEffect, useReducer, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
 import type { AnswerOutcome, ApprovalCard as AhoCard, Entry, Event } from "../aho";
-import { DraftConfirm } from "../components/DraftConfirm";
-import { type DraftedBody, Transcript } from "../components/Transcript";
-import type { CheckResult, Workspace } from "../gen/api";
+import type { CheckResult, Release, Workspace } from "../gen/api";
 import type { Draft, Manifest } from "../gen/contract";
 import { api } from "../lib/api";
 import { draftToValue } from "../lib/draft";
 import { RpcClient, type Status } from "../lib/rpc";
 import { Badge, ErrorBox } from "../ui/common";
 import { useAction } from "../ui/hooks";
+import { Modal } from "../ui/overlay";
+import { DraftConfirm } from "./DraftConfirm";
+import { type DraftedBody, Transcript } from "./Transcript";
 
 interface View {
   entries: Entry[];
@@ -64,7 +65,7 @@ const STATUS_TONE: Record<Status, "ok" | "warn" | "bad" | "info"> = { connecting
 
 function CardView({ card, onAnswer }: { card: AhoCard; onAnswer: (outcome: AnswerOutcome) => void }) {
   return (
-    <div className="card aho-approval" role="group" aria-label={`approval ${card.tool}`}>
+    <div className="aho-approval" role="group" aria-label={`approval ${card.tool}`}>
       <div className="row">
         <strong>
           <code>{card.tool}</code>
@@ -92,9 +93,17 @@ function CardView({ card, onAnswer }: { card: AhoCard; onAnswer: (outcome: Answe
   );
 }
 
-export function WorkspacePage() {
-  const p = useParams().p ?? "";
-  const navigate = useNavigate();
+export interface ChatProps {
+  project: string;
+  /** The started workspace (its preview URL), once. */
+  onWorkspace?: (w: Workspace) => void;
+  /** Something may have changed the files: a tool result arrived, or a turn ended. */
+  onActivity?: () => void;
+  /** A release proposed from an aho-drafted manifest confirmed here. */
+  onProposed?: (release: Release) => void;
+}
+
+export function Chat({ project, onWorkspace, onActivity, onProposed }: ChatProps) {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [status, setStatus] = useState<{ status: Status; detail?: string }>({ status: "connecting" });
   const [view, dispatch] = useReducer(reduce, EMPTY);
@@ -104,20 +113,24 @@ export function WorkspacePage() {
   const [review, setReview] = useState<DraftedBody | null>(null);
   const [check, setCheck] = useState<CheckResult | null>(null);
   const client = useRef<RpcClient | null>(null);
+  const log = useRef<HTMLDivElement>(null);
+  const callbacks = useRef({ onWorkspace, onActivity, onProposed });
+  callbacks.current = { onWorkspace, onActivity, onProposed };
 
   useEffect(() => {
     let cancelled = false;
     let rpc: RpcClient | null = null;
     (async () => {
-      const first = await api.startWorkspace(p);
+      const first = await api.startWorkspace(project);
       if (cancelled) return;
       setWorkspace(first);
+      callbacks.current.onWorkspace?.(first);
       let fresh: Workspace | null = first;
       rpc = new RpcClient({
         // Reconnects resume the same session with a freshly minted socket token; the host
         // remembers the session learned from the first hello_ok, so `null` resumes it too.
         url: async () => {
-          const w: Workspace = fresh ?? (await api.startWorkspace(p, rpc?.hello?.session ?? first.session_id ?? undefined));
+          const w: Workspace = fresh ?? (await api.startWorkspace(project, rpc?.hello?.session ?? first.session_id ?? undefined));
           fresh = null;
           return socketUrl(w);
         },
@@ -128,7 +141,10 @@ export function WorkspacePage() {
           if (s === "open") setError(null);
         },
       });
-      rpc.on(dispatch);
+      rpc.on((ev) => {
+        dispatch(ev);
+        if ((ev.event === "entry" && ev.payload.kind.type === "tool_result") || ev.event === "idle") callbacks.current.onActivity?.();
+      });
       client.current = rpc;
       await rpc.connect();
     })().catch((e: unknown) => {
@@ -139,7 +155,13 @@ export function WorkspacePage() {
       rpc?.close();
       client.current = null;
     };
-  }, [p]);
+  }, [project]);
+
+  // Keep the newest message in view.
+  useEffect(() => {
+    const el = log.current;
+    if (el !== null) el.scrollTop = el.scrollHeight;
+  }, [view.entries.length, view.streaming, view.cards.length]);
 
   const send = () => {
     const c = client.current;
@@ -171,45 +193,84 @@ export function WorkspacePage() {
     // The handshake names the session authoritatively; the workspace may predate it.
     const sessionId = client.current?.hello?.session ?? workspace.session_id;
     if (sessionId === null || sessionId === undefined) throw new Error("the session has not started yet");
-    const uploaded = await api.uploadSession(p, sessionId, jsonl);
-    const release = await api.propose(p, { manifest, edge_toml: null, provenance: { kind: "attested", session_id: uploaded.session_id, head_hash: uploaded.head_hash } });
-    navigate(`/projects/${encodeURIComponent(p)}/releases/${encodeURIComponent(release.id)}`);
+    const uploaded = await api.uploadSession(project, sessionId, jsonl);
+    const release = await api.propose(project, { manifest, edge_toml: null, provenance: { kind: "attested", session_id: uploaded.session_id, head_hash: uploaded.head_hash } });
+    setReview(null);
+    callbacks.current.onProposed?.(release);
   });
 
   const open = status.status === "open";
 
   return (
-    <section className="workspace">
-      <p className="crumbs">
-        <Link to={`/projects/${encodeURIComponent(p)}`}>{p}</Link> / workspace
-      </p>
-      <div className="row">
-        <h1>Workspace</h1>
+    <section className="chat" aria-label="Chat with aho">
+      <header className="pane-head">
+        <h2>Chat</h2>
         <Badge tone={STATUS_TONE[status.status]}>{status.status}</Badge>
-        {status.detail !== undefined && status.status !== "open" && <span className="muted">{status.detail}</span>}
+        {status.detail !== undefined && status.status !== "open" && <span className="muted small grow">{status.detail}</span>}
         {status.status === "closed" && client.current !== null && (
-          <button type="button" className="secondary" onClick={() => client.current?.connect().catch((e: unknown) => setError(e))}>
+          <button type="button" className="secondary small" onClick={() => client.current?.connect().catch((e: unknown) => setError(e))}>
             Reconnect
           </button>
         )}
-        {workspace !== null && (
-          <a href={workspace.preview_url} target="_blank" rel="noreferrer">
-            Preview
-          </a>
+      </header>
+      <div className="chat-log" ref={log}>
+        {view.entries.length === 0 && view.streaming === "" && (
+          <p className="chat-empty muted">Tell aho what to build. It works in this project's workspace; the Code tab shows its files as they change.</p>
         )}
+        <Transcript
+          entries={view.entries}
+          streaming={view.streaming}
+          onReviewDraft={(body) => {
+            setCheck(null);
+            submit.clear();
+            setReview(body);
+          }}
+        />
+        {view.cards.map((c) => (
+          <CardView key={c.id} card={c} onAnswer={(o) => answer(c.id, o)} />
+        ))}
       </div>
-      <ErrorBox error={error} />
-      {view.notices.map((n, i) => (
-        <p key={i} className="error">
-          {n}
-        </p>
-      ))}
-
-      {review !== null ? (
-        <div>
-          <button type="button" className="link" onClick={() => setReview(null)}>
-            ← Back to the conversation
-          </button>
+      <div className="chat-foot">
+        <ErrorBox error={error} />
+        {view.notices.map((n, i) => (
+          <p key={i} className="error">
+            {n}
+          </p>
+        ))}
+        <form
+          className="prompt"
+          onSubmit={(e) => {
+            e.preventDefault();
+            send();
+          }}
+        >
+          <textarea
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send();
+              }
+            }}
+            placeholder={open ? "Ask aho to build, fix, or deploy… (Enter sends, Shift+Enter for a new line)" : "Connecting…"}
+            rows={3}
+            disabled={!open}
+            aria-label="prompt"
+          />
+          <div className="row">
+            {running && <span className="working muted small grow">aho is working…</span>}
+            <button type="button" className="danger" disabled={!open || !running} onClick={() => client.current?.abort().catch((e: unknown) => setError(e))}>
+              Abort
+            </button>
+            <button type="submit" disabled={!open || prompt.trim() === ""}>
+              Send
+            </button>
+          </div>
+        </form>
+      </div>
+      {review !== null && (
+        <Modal title="Confirm aho's manifest draft" onClose={() => setReview(null)} wide>
           <DraftConfirm draft={review.draft} onSubmit={(d) => void submit.run(d)} submitting={submit.busy} />
           {check !== null && (check.refusals.length > 0 || check.edge_errors.length > 0) && (
             <div className="error" role="alert">
@@ -227,52 +288,7 @@ export function WorkspacePage() {
             </div>
           )}
           <ErrorBox error={submit.error} />
-        </div>
-      ) : (
-        <>
-          <Transcript
-            entries={view.entries}
-            streaming={view.streaming}
-            onReviewDraft={(body) => {
-              setCheck(null);
-              setReview(body);
-            }}
-          />
-          {view.cards.map((c) => (
-            <CardView key={c.id} card={c} onAnswer={(o) => answer(c.id, o)} />
-          ))}
-          <form
-            className="prompt"
-            onSubmit={(e) => {
-              e.preventDefault();
-              send();
-            }}
-          >
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-              placeholder={open ? "Ask aho to build, fix, or deploy… (Enter sends, Shift+Enter for a new line)" : "Connecting…"}
-              rows={3}
-              disabled={!open}
-              aria-label="prompt"
-            />
-            <div className="row">
-              <button type="submit" disabled={!open || prompt.trim() === ""}>
-                Send
-              </button>
-              <button type="button" className="danger" disabled={!open || !running} onClick={() => client.current?.abort().catch((e: unknown) => setError(e))}>
-                Abort
-              </button>
-              {running && <span className="muted">aho is working…</span>}
-            </div>
-          </form>
-        </>
+        </Modal>
       )}
     </section>
   );

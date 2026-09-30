@@ -22,6 +22,7 @@ cloud-builder   = { path = "crates/builder" }
 cap-deploy      = { path = "crates/cap-deploy" }
 cap-edge-contract = { path = "crates/cap-edge-contract" }
 bundle-cloud    = { path = "crates/bundle-cloud" }
+cloud-workdir   = { path = "crates/workdir" }
 
 # aho, by path. Never forked: cloud features are new capability crates composed in bundle-cloud.
 aho-types   = { path = "../aho/crates/aho-types" }

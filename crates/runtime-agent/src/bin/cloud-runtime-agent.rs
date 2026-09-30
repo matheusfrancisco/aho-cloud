@@ -1,5 +1,6 @@
-//! `cloud-runtime-agent`: the per-host daemon. Serves the internal deployment API, runs the
-//! reconcile loop over Firecracker microVMs, and the egress proxy guests must use.
+//! `cloud-runtime-agent`: the per-host daemon. Serves the internal deployment API and runs the
+//! reconcile loop over Firecracker microVMs (with the egress proxy guests must use), or over
+//! Docker containers for local development (`--backend docker`, no isolation boundary).
 
 #![forbid(unsafe_code)]
 
@@ -8,16 +9,27 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+use cloud_runtime::docker::{Docker, DockerConfig};
 use cloud_runtime::egress::{EgressPolicies, EgressProxy, SystemDialer};
 use cloud_runtime::firecracker::{Firecracker, FirecrackerConfig};
 use cloud_runtime::image::{ImagePrograms, ImageStoreConfig};
 use cloud_runtime::net::{Allocator, Ipv4Cidr};
-use cloud_runtime::{Supervisor, SupervisorConfig, api};
+use cloud_runtime::{Supervisor, SupervisorConfig, Vmm, api};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+enum Backend {
+    /// Firecracker microVMs on a Linux/KVM host.
+    Firecracker,
+    /// Docker containers: local development only, no egress enforcement or VM isolation.
+    Docker,
+}
 
 #[derive(Parser, Debug)]
-#[command(name = "cloud-runtime-agent", about = "aho cloud runtime agent (Firecracker microVMs)")]
+#[command(name = "cloud-runtime-agent", about = "aho cloud runtime agent (Firecracker microVMs, or Docker for local development)")]
 struct Args {
+    #[arg(long, env = "AHO_CLOUD_RUNTIME_BACKEND", value_enum, default_value_t = Backend::Firecracker)]
+    backend: Backend,
     /// Internal API listen address.
     #[arg(long, env = "AHO_CLOUD_RUNTIME_LISTEN", default_value = "0.0.0.0:7400")]
     listen: SocketAddr,
@@ -84,6 +96,15 @@ struct Args {
     unhealthy_threshold: u32,
     #[arg(long, default_value_t = 60)]
     startup_grace_secs: u64,
+    /// `docker` CLI (docker backend).
+    #[arg(long, default_value = "docker")]
+    docker: PathBuf,
+    /// Host address container ports are published on (docker backend).
+    #[arg(long, default_value = "127.0.0.1")]
+    publish_ip: std::net::Ipv4Addr,
+    /// Docker network containers join (docker backend); the default bridge when unset.
+    #[arg(long)]
+    docker_network: Option<String>,
 }
 
 #[tokio::main]
@@ -98,59 +119,90 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("AHO_CLOUD_SERVICE_TOKEN must not be empty".into());
     }
     let allocator = Allocator::new(args.subnet)?;
-    let gateway = allocator.gateway();
-
-    let backend = Firecracker::new(FirecrackerConfig {
-        images: ImageStoreConfig {
-            dir: args.image_dir.clone().unwrap_or_else(|| args.state_dir.join("images")),
-            programs: ImagePrograms { skopeo: args.skopeo, umoci: args.umoci, mkfs_ext4: args.mkfs_ext4 },
-            repo_template: args.image_repo,
-            guest_binary: args.guest_binary,
-        },
-        state_dir: args.state_dir,
-        firecracker: args.firecracker,
-        ip: args.ip,
-        nft: args.nft,
-        kernel: args.kernel,
-        cgroup_root: args.cgroup_root,
-        vcpus: args.vcpus,
-        mem_mib: args.mem_mib,
-        rootfs_mib: args.rootfs_mib,
-        memory_overhead_mib: args.memory_overhead_mib,
-        pids_max: args.pids_max,
-        gateway,
+    let cfg = SupervisorConfig {
         proxy_port: args.proxy_port,
-        dns_port: args.dns_port,
-        inbound_sources: args.inbound_sources,
-    });
-    backend.prepare_host().await?;
-
-    let egress = EgressPolicies::default();
-    let proxy =
-        Arc::new(EgressProxy::new(egress.clone(), SystemDialer { guest_subnet: args.subnet, connect_timeout: Duration::from_secs(10) }));
-    let proxy_listener = tokio::net::TcpListener::bind((gateway, args.proxy_port)).await?;
-    tracing::info!(addr = %proxy_listener.local_addr()?, "egress proxy listening");
-
-    let supervisor = Supervisor::new(
-        backend,
-        allocator,
-        egress,
-        SupervisorConfig {
-            proxy_port: args.proxy_port,
-            max_replicas: args.max_replicas,
-            health_timeout: Duration::from_millis(args.health_timeout_ms),
-            unhealthy_threshold: args.unhealthy_threshold,
-            startup_grace: Duration::from_secs(args.startup_grace_secs),
-        },
-    );
-    let app = api::router(supervisor.clone(), &args.service_token);
+        max_replicas: args.max_replicas,
+        health_timeout: Duration::from_millis(args.health_timeout_ms),
+        unhealthy_threshold: args.unhealthy_threshold,
+        startup_grace: Duration::from_secs(args.startup_grace_secs),
+    };
     let api_listener = tokio::net::TcpListener::bind(args.listen).await?;
-    tracing::info!(addr = %api_listener.local_addr()?, "runtime API listening");
-
     let interval = Duration::from_secs(args.reconcile_interval_secs.max(1));
+    let egress = EgressPolicies::default();
+
+    match args.backend {
+        Backend::Docker => {
+            tracing::warn!("docker backend: development only; egress allowlists are not enforced");
+            let backend = Docker::new(DockerConfig {
+                docker: args.docker,
+                repo_template: args.image_repo,
+                state_dir: args.state_dir,
+                publish_ip: args.publish_ip,
+                network: args.docker_network,
+                mem_mib: args.mem_mib,
+                cpus: args.vcpus,
+                pids_max: args.pids_max,
+            });
+            backend.prepare().await?;
+            serve(Supervisor::new(backend, allocator, egress, cfg), api_listener, &args.service_token, interval, None).await
+        }
+        Backend::Firecracker => {
+            let gateway = allocator.gateway();
+            let backend = Firecracker::new(FirecrackerConfig {
+                images: ImageStoreConfig {
+                    dir: args.image_dir.clone().unwrap_or_else(|| args.state_dir.join("images")),
+                    programs: ImagePrograms { skopeo: args.skopeo, umoci: args.umoci, mkfs_ext4: args.mkfs_ext4 },
+                    repo_template: args.image_repo,
+                    guest_binary: args.guest_binary,
+                },
+                state_dir: args.state_dir,
+                firecracker: args.firecracker,
+                ip: args.ip,
+                nft: args.nft,
+                kernel: args.kernel,
+                cgroup_root: args.cgroup_root,
+                vcpus: args.vcpus,
+                mem_mib: args.mem_mib,
+                rootfs_mib: args.rootfs_mib,
+                memory_overhead_mib: args.memory_overhead_mib,
+                pids_max: args.pids_max,
+                gateway,
+                proxy_port: args.proxy_port,
+                dns_port: args.dns_port,
+                inbound_sources: args.inbound_sources,
+            });
+            backend.prepare_host().await?;
+            let proxy = Arc::new(EgressProxy::new(
+                egress.clone(),
+                SystemDialer { guest_subnet: args.subnet, connect_timeout: Duration::from_secs(10) },
+            ));
+            let proxy_listener = tokio::net::TcpListener::bind((gateway, args.proxy_port)).await?;
+            tracing::info!(addr = %proxy_listener.local_addr()?, "egress proxy listening");
+            let supervisor = Supervisor::new(backend, allocator, egress, cfg);
+            serve(supervisor, api_listener, &args.service_token, interval, Some((proxy, proxy_listener))).await
+        }
+    }
+}
+
+/// Runs the API, the reconcile loop and (for microVMs) the egress proxy until Ctrl-C.
+async fn serve<V: Vmm>(
+    supervisor: Supervisor<V>,
+    api_listener: tokio::net::TcpListener,
+    service_token: &str,
+    interval: Duration,
+    proxy: Option<(Arc<EgressProxy<SystemDialer>>, tokio::net::TcpListener)>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let app = api::router(supervisor.clone(), service_token);
+    tracing::info!(addr = %api_listener.local_addr()?, "runtime API listening");
+    let proxy = async move {
+        match proxy {
+            Some((proxy, listener)) => proxy.serve(listener).await,
+            None => std::future::pending().await,
+        }
+    };
     tokio::select! {
         r = axum::serve(api_listener, app) => r?,
-        r = proxy.serve(proxy_listener) => r?,
+        r = proxy => r?,
         () = supervisor.run(interval) => {}
         r = tokio::signal::ctrl_c() => {
             r?;

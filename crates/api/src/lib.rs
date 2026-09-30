@@ -52,6 +52,13 @@ pub mod routes {
     pub const WORKSPACES: &str = "/v1/projects/{p}/workspaces";
     pub const LEDGER: &str = "/v1/projects/{p}/ledger";
     pub const SECRETS: &str = "/v1/projects/{p}/secrets";
+    /// `POST` a [`super::WorkspaceDeploy`] → [`super::WorkspaceDeployed`]: ship the caller's
+    /// workspace files as a release (preview activates once built).
+    pub const WORKSPACE_DEPLOY: &str = "/v1/projects/{p}/workspace/deploy";
+    /// `GET` → [`super::FileTree`] of the caller's workspace (what a deploy would ship).
+    pub const WORKSPACE_FILES: &str = "/v1/projects/{p}/workspace/files";
+    /// `GET ?path=` → [`super::FileContent`].
+    pub const WORKSPACE_FILE: &str = "/v1/projects/{p}/workspace/file";
 
     /// Fills `{name}` placeholders in order of `args`.
     pub fn fill(template: &str, args: &[(&str, &str)]) -> String {
@@ -461,6 +468,61 @@ pub struct Workspace {
     pub session_id: Option<String>,
     /// Preview URL on the edge.
     pub preview_url: String,
+}
+
+/// Ship the caller's workspace. Without `manifest`, the workspace's own `deploy.json` is used;
+/// if it has none, the answer is a draft to confirm and send back as `manifest`. Either way the
+/// cloud sets `source` to the uploaded archive of the workspace files.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct WorkspaceDeploy {
+    #[serde(default)]
+    pub manifest: Option<Manifest>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum WorkspaceDeployed {
+    /// Proposed; it activates at preview once built.
+    Proposed { release: Box<Release> },
+    /// No `deploy.json` and no manifest in the request: confirm this draft (drafted from the
+    /// files and the aho session, `source` already pointing at the archive) and send it back.
+    NeedsManifest { draft: cloud_contract::draft::Draft },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum FileKind {
+    File,
+    Dir,
+    Symlink,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct FileEntry {
+    /// `/`-separated, relative to the workspace root.
+    pub path: String,
+    pub kind: FileKind,
+    pub size: u64,
+}
+
+/// The workspace as a deploy would ship it: `.gitignore`d files, `.git` and `.aho` left out.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct FileTree {
+    /// In path order.
+    pub files: Vec<FileEntry>,
+    /// More entries exist than were listed.
+    pub truncated: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct FileContent {
+    pub path: String,
+    pub size: u64,
+    /// UTF-8 text, or `None` for binary files.
+    #[serde(default)]
+    pub text: Option<String>,
+    /// Only the first part of a large file is in `text`.
+    pub truncated: bool,
 }
 
 // ---- ledger ---------------------------------------------------------------------------------

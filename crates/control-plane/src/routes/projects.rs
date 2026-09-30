@@ -52,13 +52,20 @@ pub async fn upload_archive(
     body: Bytes,
 ) -> Result<Json<ArchiveUploaded>, AppError> {
     let (project, _) = project_access(&st, &user, &p).await?;
-    if body.is_empty() {
+    Ok(Json(store_archive(&st, &project.slug, &body).await?))
+}
+
+/// Stores `bytes` as a source archive of `project`, addressed by its content hash.
+pub(super) async fn store_archive(st: &AppState, project: &str, bytes: &[u8]) -> Result<ArchiveUploaded, AppError> {
+    if bytes.is_empty() {
         return Err(AppError::invalid("empty archive"));
     }
-    let hash = st.blobs.put(&body).await?;
-    let size = u64::try_from(body.len()).unwrap_or(u64::MAX);
-    st.store.put_blob(&BlobRec { project: project.slug, hash: hash.clone(), kind: BlobKind::Archive, size, created_at: st.now() }).await?;
-    Ok(Json(ArchiveUploaded { hash, bytes: size }))
+    let hash = st.blobs.put(bytes).await?;
+    let size = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+    st.store
+        .put_blob(&BlobRec { project: project.to_owned(), hash: hash.clone(), kind: BlobKind::Archive, size, created_at: st.now() })
+        .await?;
+    Ok(ArchiveUploaded { hash, bytes: size })
 }
 
 /// What a verified session log proves.
@@ -97,16 +104,36 @@ pub async fn upload_session(
     if !valid_session_id(session_id) {
         return Err(AppError::invalid("`?session_id=` is required (1–128 of [A-Za-z0-9_-])"));
     }
-    let text = std::str::from_utf8(&body).map_err(|_| AppError::invalid("session log is not UTF-8"))?;
-    let verified = verify_session_log(text).map_err(|e| AppError::invalid(format!("session log refused: {e}")))?;
-    let blob_hash = st.blobs.put(&body).await?;
-    let size = u64::try_from(body.len()).unwrap_or(u64::MAX);
+    let verified = verify_session(session_id, &body)?;
+    Ok(Json(record_session(&st, &project.slug, session_id, &body, verified).await?))
+}
+
+/// Checks an uploaded session log: a well-formed id, UTF-8, and an intact hash chain.
+pub(super) fn verify_session(session_id: &str, log: &[u8]) -> Result<VerifiedLog, AppError> {
+    if !valid_session_id(session_id) {
+        return Err(AppError::invalid("a session id is 1–128 of [A-Za-z0-9_-]"));
+    }
+    let text = std::str::from_utf8(log).map_err(|_| AppError::invalid("session log is not UTF-8"))?;
+    verify_session_log(text).map_err(|e| AppError::invalid(format!("session log refused: {e}")))
+}
+
+/// Records a log [`verify_session`] accepted for `project`, so releases may name it as attested
+/// provenance.
+pub(super) async fn record_session(
+    st: &AppState,
+    project: &str,
+    session_id: &str,
+    log: &[u8],
+    verified: VerifiedLog,
+) -> Result<SessionUploaded, AppError> {
+    let blob_hash = st.blobs.put(log).await?;
+    let size = u64::try_from(log.len()).unwrap_or(u64::MAX);
     st.store
-        .put_blob(&BlobRec { project: project.slug.clone(), hash: blob_hash.clone(), kind: BlobKind::Session, size, created_at: st.now() })
+        .put_blob(&BlobRec { project: project.to_owned(), hash: blob_hash.clone(), kind: BlobKind::Session, size, created_at: st.now() })
         .await?;
     st.store
         .put_session(&SessionRec {
-            project: project.slug,
+            project: project.to_owned(),
             session_id: session_id.to_owned(),
             head_hash: verified.head_hash.clone(),
             blob_hash,
@@ -114,7 +141,7 @@ pub async fn upload_session(
             created_at: st.now(),
         })
         .await?;
-    Ok(Json(SessionUploaded { session_id: session_id.to_owned(), head_hash: verified.head_hash, entries: verified.entries }))
+    Ok(SessionUploaded { session_id: session_id.to_owned(), head_hash: verified.head_hash, entries: verified.entries })
 }
 
 pub async fn ledger(State(st): State<AppState>, Caller(user): Caller, Path(p): Path<String>) -> Result<Json<Vec<LedgerEntry>>, AppError> {

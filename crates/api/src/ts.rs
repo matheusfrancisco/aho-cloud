@@ -57,6 +57,12 @@ pub fn typescript() -> String {
         SetSecret,
         SecretView,
         Workspace,
+        WorkspaceDeploy,
+        WorkspaceDeployed,
+        FileKind,
+        FileEntry,
+        FileTree,
+        FileContent,
         LedgerEntry,
     );
     let contract = cloud_contract::ts::typescript();
@@ -109,6 +115,9 @@ fn routes_ts() -> String {
         WORKSPACES,
         LEDGER,
         SECRETS,
+        WORKSPACE_DEPLOY,
+        WORKSPACE_FILES,
+        WORKSPACE_FILE,
     );
     out.push_str("} as const;\n\n");
     out.push_str(

@@ -46,6 +46,9 @@ export interface SocketLike {
 
 export type Status = "connecting" | "open" | "reconnecting" | "closed";
 
+/** Close code the session host uses when a newer connection to the same workspace replaced this one. */
+export const CLOSE_REPLACED = 4000;
+
 export interface RpcOptions {
   /** Socket URL (with its `?token=`); a function is called on every (re)connect, e.g. to mint a fresh token. */
   url: string | (() => string | Promise<string>);
@@ -177,7 +180,16 @@ export class RpcClient {
       // A `close` event always follows; that is where the drop is handled.
     };
     socket.onclose = (ev) => {
-      if (this.#socket === socket) this.#dropped(`the socket closed (${ev.code}${ev.reason === "" ? "" : ` ${ev.reason}`})`);
+      if (this.#socket !== socket) return;
+      if (ev.code === CLOSE_REPLACED) {
+        // Another window took the workspace over; reconnecting would take it back, forever.
+        this.#socket = null;
+        this.#hello = null;
+        this.#failPending("the workspace was opened in another window");
+        this.#setStatus("closed", "this workspace was opened in another window; reload to take it back");
+        return;
+      }
+      this.#dropped(`the socket closed (${ev.code}${ev.reason === "" ? "" : ` ${ev.reason}`})`);
     };
     let ok: HelloOk;
     try {

@@ -11,6 +11,13 @@ const draft: Draft = {
     "/egress": { value: ["api.stripe.com"], strength: "observed", evidence: [{ uri: "net:flow-7", note: "TLS to api.stripe.com:443" }], confirmed: false },
     "/build": { value: { kind: "dockerfile", path: "Dockerfile", context: "." }, strength: "chained", evidence: [{ uri: "aho-log:5f3a#c0ffee", note: "docker build ." }], confirmed: false },
     "/project": { value: "shop", strength: "declared", evidence: [], confirmed: true },
+    // Human decisions already made, so these tests are about confirmation only.
+    "/processes/0/name": { value: "web", strength: "declared", evidence: [], confirmed: true },
+    "/processes/0/health": { value: { kind: "http", path: "/healthz", port: null }, strength: "declared", evidence: [], confirmed: true },
+    "/auth": { value: { mode: "none" }, strength: "declared", evidence: [], confirmed: true },
+    "/data_class": { value: "none", strength: "declared", evidence: [], confirmed: true },
+    "/owner": { value: { name: "Ana", email: "ana@acme.com", escalation: [] }, strength: "declared", evidence: [], confirmed: true },
+    "/budget": { value: { ceiling_usd_month: 20, degrade: "sleep" }, strength: "declared", evidence: [], confirmed: true },
   },
 };
 
@@ -60,6 +67,54 @@ describe("draft confirm screen", () => {
     expect(unconfirmed(sent)).toEqual([]);
     expect(sent.fields["/processes/0/port"]).toEqual({ value: 8080, strength: "declared", evidence: draft.fields["/processes/0/port"]!.evidence, confirmed: true });
     expect(sent.fields["/egress"]).toMatchObject({ strength: "observed", confirmed: true });
+  });
+});
+
+describe("fields nothing in the code decides", () => {
+  const partial: Draft = {
+    fields: {
+      "/project": { value: "shop", strength: "declared", evidence: [], confirmed: true },
+      "/processes/0/name": { value: "web", strength: "declared", evidence: [], confirmed: true },
+      "/processes/0/port": { value: 8080, strength: "declared", evidence: [], confirmed: true },
+      "/processes/1/name": { value: "worker", strength: "declared", evidence: [], confirmed: true },
+    },
+  };
+
+  it("asks for them, blocks submit until answered, and declares the answers", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<DraftConfirm draft={partial} onSubmit={onSubmit} />);
+    const required = screen.getByLabelText("required fields");
+    // Signed out in this test: no owner to prefill.
+    expect(submit()).toBeDisabled();
+    expect(screen.getByText("Give the owner's name and email.")).toBeInTheDocument();
+    await user.type(within(required).getByLabelText("Owner name"), "Ana");
+    await user.type(within(required).getByLabelText("Owner email (who gets called when it breaks)"), "ana@acme.com");
+    // The worker has no port, so its health check is a command the human must give.
+    expect(screen.getByText("Say how to check that worker is healthy.")).toBeInTheDocument();
+    await user.type(within(required).getByLabelText("Health command for worker (exit 0 = healthy)"), "test -f /tmp/ready");
+    await user.selectOptions(within(required).getByLabelText("Who can open the app"), "github");
+    expect(submit()).toBeEnabled();
+
+    await user.click(submit());
+    const value = draftToValue(onSubmit.mock.calls[0]![0] as Draft);
+    expect(value).toMatchObject({
+      api_version: "deploy.aho.cloud/v1",
+      auth: { mode: "oidc", provider: { kind: "github" } },
+      data_class: "none",
+      owner: { name: "Ana", email: "ana@acme.com" },
+      budget: { ceiling_usd_month: 20, degrade: "sleep" },
+      processes: [
+        { name: "web", health: { kind: "http", path: "/" } },
+        { name: "worker", health: { kind: "command", argv: ["test", "-f", "/tmp/ready"] } },
+      ],
+    });
+  });
+
+  it("cannot deploy a draft without any process", () => {
+    render(<DraftConfirm draft={{ fields: { "/project": partial.fields["/project"]! } }} onSubmit={() => {}} />);
+    expect(submit()).toBeDisabled();
+    expect(screen.getAllByText(/No process was found/).length).toBeGreaterThan(0);
   });
 });
 

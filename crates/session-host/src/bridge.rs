@@ -9,6 +9,8 @@
 //!   gets `kill_grace` to exit and is then killed. When the child exits first, its remaining output
 //!   is forwarded and the socket closed: 1000 on exit code 0, 1011 otherwise. The connection's
 //!   limit slot is released only once the child is gone.
+//! * Takeover: a newer connection to the same workspace asks this one to leave; it is torn down
+//!   like a client close and the socket closed with [`CLOSE_REPLACED`].
 
 use std::io;
 use std::pin::Pin;
@@ -33,6 +35,10 @@ use crate::workspace::{Workspace, is_session_id};
 
 /// How long to wait for the client's close reply after sending ours.
 const CLOSE_WAIT: Duration = Duration::from_secs(2);
+/// Close code (application range) for a connection a newer one to the same workspace replaced.
+/// Clients must not reconnect on it, or two windows would keep replacing each other.
+pub const CLOSE_REPLACED: u16 = 4000;
+const REPLACED_MESSAGE: &str = "this workspace was opened in another window";
 /// Longest reason a close frame can carry, in bytes.
 const MAX_REASON: usize = 123;
 
@@ -176,6 +182,10 @@ enum Farewell {
 
 fn idle_farewell() -> Farewell {
     Farewell::Close { error: None, code: close_code::AWAY, reason: "idle timeout".into() }
+}
+
+fn replaced_farewell() -> Farewell {
+    Farewell::Close { error: Some(REPLACED_MESSAGE.into()), code: CLOSE_REPLACED, reason: "replaced by a newer connection".into() }
 }
 
 fn child_farewell(status: &io::Result<Option<i32>>) -> Farewell {
@@ -382,6 +392,7 @@ enum Outcome {
     SendFailed,
     Idle,
     ReaderPanicked,
+    Replaced,
 }
 
 async fn stop_child(process: &mut dyn Process, grace: Duration) -> io::Result<Option<i32>> {
@@ -406,10 +417,18 @@ pub(crate) struct Conn {
 
 /// Runs one connection to completion.
 pub(crate) async fn run(socket: WebSocket, conn: Conn) {
-    let Conn { workspace, user, spawner, template, limits, permit } = conn;
+    let Conn { workspace, user, spawner, template, limits, mut permit } = conn;
     let (sink, mut stream) = socket.split();
 
-    let hello = match timeout(limits.idle_timeout, first_frame(&mut stream, limits.max_frame_bytes)).await {
+    let first = tokio::select! {
+        first = timeout(limits.idle_timeout, first_frame(&mut stream, limits.max_frame_bytes)) => first,
+        () = permit.replaced() => {
+            drop(permit);
+            say_farewell(sink, Some(stream), replaced_farewell()).await;
+            return;
+        }
+    };
+    let hello = match first {
         Ok(Ok(text)) => text,
         Ok(Err(end)) => {
             drop(permit);
@@ -482,6 +501,7 @@ pub(crate) async fn run(socket: WebSocket, conn: Conn) {
                     }
                     idle.as_mut().reset(deadline);
                 }
+                () = permit.replaced() => break Outcome::Replaced,
             }
         }
     };
@@ -519,6 +539,7 @@ pub(crate) async fn run(socket: WebSocket, conn: Conn) {
         (Outcome::Exited | Outcome::StdoutClosed, _) => child_farewell(&status),
         (Outcome::BadOutput(e), _) => Farewell::Close { error: Some(e.to_string()), code: close_code::ERROR, reason: e.to_string() },
         (Outcome::Idle, _) => idle_farewell(),
+        (Outcome::Replaced, _) => replaced_farewell(),
         (Outcome::ReaderPanicked, _) => Farewell::Close { error: None, code: close_code::ERROR, reason: "internal error".into() },
         (Outcome::Client, None) | (Outcome::SendFailed, _) => Farewell::Silent,
     };

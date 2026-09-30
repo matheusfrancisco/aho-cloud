@@ -170,6 +170,11 @@ impl<S: LogStore> Ledger<S> {
         self.commit(vec![LedgerBody::PolicyChanged { policy, approver }], None).map(drop)
     }
 
+    /// Records the owning org's member count; approval quorums never exceed it.
+    pub fn members_changed(&self, count: u16) -> Result<(), LedgerError> {
+        self.commit(vec![LedgerBody::MembersChanged { count }], None).map(drop)
+    }
+
     /// [`Self::state`] plus every approver signature re-verified by `verify` over its message:
     /// [`approval_message`] for approvals, [`standing_orders_message`] and [`policy_message`].
     pub fn audit(&self, verify: &dyn Fn(&Approver, &[u8]) -> bool) -> Result<(), LedgerError> {
@@ -297,6 +302,8 @@ pub enum LedgerError {
     StandingActivationUnrecorded { release: String },
     #[error("{user_id} is not an org owner; {action} needs one")]
     NotOwner { user_id: String, action: &'static str },
+    #[error("an org has at least one member")]
+    NoMembers,
 }
 
 fn refusal_summary(refusals: &[Refusal]) -> String {

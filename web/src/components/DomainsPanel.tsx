@@ -6,7 +6,7 @@ import { api } from "../lib/api";
 import { Badge, ErrorBox } from "../ui/common";
 import { useAction } from "../ui/hooks";
 
-const STATE_TONE: Record<DomainState, "ok" | "warn" | "bad" | "info" | "muted"> = {
+export const DOMAIN_STATE_TONE: Record<DomainState, "ok" | "warn" | "bad" | "info" | "muted"> = {
   pending: "warn",
   verified: "ok",
   grace: "warn",
@@ -22,18 +22,18 @@ const STATE_HINT: Record<DomainState, string> = {
   tombstoned: "Removed; the hostname shows a tombstone page.",
 };
 
-function DomainRow({ project, domain, onChanged }: { project: string; domain: DomainView; onChanged: () => void }) {
+/** One binding as a list item; `onChanged` receives the state after a verification. */
+export function DomainRow({ project, domain, onChanged }: { project: string; domain: DomainView; onChanged: (domain: DomainView) => void }) {
   const verify = useAction(async () => {
-    await api.verifyDomain(project, domain.hostname);
-    onChanged();
+    onChanged(await api.verifyDomain(project, domain.hostname));
   });
   return (
     <li className="domain">
       <div className="row">
-        <strong>{domain.hostname}</strong>
-        <Badge tone={STATE_TONE[domain.state]}>{domain.state}</Badge>
-        <span className="muted">{domain.mode.replace("_", " ")}</span>
-        <button type="button" onClick={() => void verify.run()} disabled={verify.busy || domain.state === "tombstoned"}>
+        <strong className="grow">{domain.hostname}</strong>
+        <Badge tone={DOMAIN_STATE_TONE[domain.state]}>{domain.state}</Badge>
+        <span className="muted small">{domain.mode.replace("_", " ")}</span>
+        <button type="button" className="secondary small" onClick={() => void verify.run()} disabled={verify.busy || domain.state === "tombstoned"}>
           {verify.busy ? "Checking…" : `Verify ${domain.hostname}`}
         </button>
       </div>
@@ -65,33 +65,25 @@ function DomainRow({ project, domain, onChanged }: { project: string; domain: Do
   );
 }
 
-/** Domains of a project; `onChanged` reloads them after an add or a verification. */
-export function DomainsPanel({ project, domains, onChanged }: { project: string; domains: DomainView[]; onChanged: () => void }) {
+/** Binds a hostname to the project; `onAdded` receives the new binding with its DNS records. */
+export function AddDomainForm({ project, onAdded }: { project: string; onAdded: (domain: DomainView) => void }) {
   const [hostname, setHostname] = useState("");
   const [mode, setMode] = useState<DomainMode>("cname");
   const add = useAction(async () => {
-    await api.addDomain(project, { hostname: hostname.trim().toLowerCase(), mode });
+    const view = await api.addDomain(project, { hostname: hostname.trim().toLowerCase(), mode });
     setHostname("");
-    onChanged();
+    onAdded(view);
   });
-
   return (
-    <div>
-      {domains.length === 0 ? <p className="muted">No custom domains yet.</p> : (
-        <ul className="domains">
-          {domains.map((d) => (
-            <DomainRow key={d.hostname} project={project} domain={d} onChanged={onChanged} />
-          ))}
-        </ul>
-      )}
+    <>
       <form
-        className="row"
+        className="row add-domain"
         onSubmit={(e) => {
           e.preventDefault();
           void add.run();
         }}
       >
-        <label>
+        <label className="grow">
           Hostname
           <input value={hostname} onChange={(e) => setHostname(e.target.value)} placeholder="shop.example.com" required />
         </label>
@@ -103,11 +95,29 @@ export function DomainsPanel({ project, domains, onChanged }: { project: string;
             <option value="ns_delegated">NS delegation</option>
           </select>
         </label>
-        <button type="submit" disabled={add.busy || hostname.trim() === ""}>
-          Add domain
+        <button type="submit" className="secondary" disabled={add.busy || hostname.trim() === ""}>
+          {add.busy ? "Adding…" : "Add domain"}
         </button>
       </form>
       <ErrorBox error={add.error} />
+    </>
+  );
+}
+
+/** Domains of a project; `onChanged` reloads them after an add or a verification. */
+export function DomainsPanel({ project, domains, onChanged }: { project: string; domains: DomainView[]; onChanged: () => void }) {
+  return (
+    <div>
+      {domains.length === 0 ? (
+        <p className="muted">No custom domains yet. Add one here, or pick one when you go live.</p>
+      ) : (
+        <ul className="domains">
+          {domains.map((d) => (
+            <DomainRow key={d.hostname} project={project} domain={d} onChanged={onChanged} />
+          ))}
+        </ul>
+      )}
+      <AddDomainForm project={project} onAdded={onChanged} />
     </div>
   );
 }

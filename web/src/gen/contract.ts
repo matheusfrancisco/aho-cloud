@@ -199,7 +199,7 @@ expires_at: number, approver: Approver, } | { "kind": "standing_order_executed",
 /**
  * Rollback target, when the action is a rollback.
  */
-release: string | null, actor: string, } | { "kind": "policy_changed", policy: ReleasePolicy, approver: Approver, };
+release: string | null, actor: string, } | { "kind": "policy_changed", policy: ReleasePolicy, approver: Approver, } | { "kind": "members_changed", count: number, };
 
 export type Strength = "inferred" | "observed" | "chained" | "declared";
 

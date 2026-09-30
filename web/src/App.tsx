@@ -1,47 +1,14 @@
-import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from "react-router";
-import { signOut, useSession } from "./lib/session";
+import { Navigate, Outlet, Route, Routes, useLocation } from "react-router";
+import { PublicShell, Shell } from "./components/Shell";
+import { useSession } from "./lib/session";
 import { DevicePage } from "./pages/DevicePage";
+import { HomePage } from "./pages/HomePage";
 import { LoginPage } from "./pages/LoginPage";
 import { OrgPage } from "./pages/OrgPage";
-import { OrgsPage } from "./pages/OrgsPage";
+import { PolicyPage } from "./pages/PolicyPage";
 import { ProjectPage } from "./pages/ProjectPage";
 import { ReleasePage } from "./pages/ReleasePage";
-import { WorkspacePage } from "./pages/WorkspacePage";
-
-function Shell() {
-  const session = useSession();
-  const navigate = useNavigate();
-  return (
-    <>
-      <header className="topbar">
-        <Link to="/" className="brand">
-          aho cloud
-        </Link>
-        <nav>
-          <Link to="/device">Approve a device</Link>
-        </nav>
-        {session !== null && (
-          <div className="me">
-            <span>{session.user.email}</span>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => {
-                signOut();
-                navigate("/login");
-              }}
-            >
-              Log out
-            </button>
-          </div>
-        )}
-      </header>
-      <main>
-        <Outlet />
-      </main>
-    </>
-  );
-}
+import { TeamPage } from "./pages/TeamPage";
 
 /** Signed-out visitors go to the login page and come back afterwards. */
 function RequireAuth() {
@@ -57,17 +24,20 @@ function RequireAuth() {
 export function App() {
   return (
     <Routes>
-      <Route element={<Shell />}>
+      <Route element={<PublicShell />}>
         <Route path="/login" element={<LoginPage />} />
-        <Route element={<RequireAuth />}>
-          <Route path="/" element={<OrgsPage />} />
+      </Route>
+      <Route element={<RequireAuth />}>
+        <Route element={<Shell />}>
+          <Route path="/" element={<HomePage />} />
           <Route path="/device" element={<DevicePage />} />
           <Route path="/orgs/:org" element={<OrgPage />} />
+          <Route path="/orgs/:org/team" element={<TeamPage />} />
+          <Route path="/orgs/:org/policy" element={<PolicyPage />} />
           <Route path="/projects/:p" element={<ProjectPage />} />
           <Route path="/projects/:p/releases/:r" element={<ReleasePage />} />
-          <Route path="/projects/:p/workspace" element={<WorkspacePage />} />
+          <Route path="*" element={<p className="muted">Not found.</p>} />
         </Route>
-        <Route path="*" element={<p>Not found.</p>} />
       </Route>
     </Routes>
   );

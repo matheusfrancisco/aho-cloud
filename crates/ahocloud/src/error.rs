@@ -15,8 +15,9 @@ pub enum Error {
     Io { path: PathBuf, source: std::io::Error },
     #[error("{0}")]
     Invalid(String),
-    #[error("session log {}: {source}", path.display())]
-    Session { path: PathBuf, source: cloud_draft::Error },
+    /// Packing, reading or drafting from the directory failed.
+    #[error(transparent)]
+    Workdir(#[from] cloud_workdir::WorkdirError),
     /// The gate refused the manifest; the refusals were printed.
     #[error("the gate refuses this manifest")]
     Refused,

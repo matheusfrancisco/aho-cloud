@@ -150,3 +150,23 @@ fn a_refused_multi_entry_action_appends_nothing() {
     assert_eq!(ledger.entries().unwrap().len(), before);
     assert!(ledger.state().unwrap().releases["r1"].approvals.is_empty());
 }
+
+#[test]
+fn a_member_count_is_the_clouds_record_never_an_operators() {
+    // A human-path entry lowering the quorum to one would let a single approver ship alone.
+    let ledger = Ledger::memory("acme-shop");
+    raw(&ledger, Principal::Operator, &LedgerBody::MembersChanged { count: 1 });
+    let (entry, v) = violation(ledger.state().unwrap_err());
+    assert_eq!(entry, 1);
+    assert!(matches!(v, LedgerError::WrongPrincipal { name: "members_changed", .. }), "{v:?}");
+}
+
+#[test]
+fn a_zero_member_count_appended_around_the_api_fails_replay() {
+    let ledger = Ledger::memory("acme-shop");
+    ledger.members_changed(3).unwrap();
+    raw(&ledger, system(), &LedgerBody::MembersChanged { count: 0 });
+    let (entry, v) = violation(ledger.state().unwrap_err());
+    assert_eq!(entry, 2);
+    assert!(matches!(v, LedgerError::NoMembers), "{v:?}");
+}

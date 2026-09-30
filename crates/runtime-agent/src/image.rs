@@ -70,9 +70,14 @@ pub fn digest_hex(digest: &str) -> Result<&str, ImageError> {
     }
 }
 
+/// `<repo>@<digest>`: the project's repository, pinned by digest.
+pub fn pinned_ref(repo_template: &str, project: &str, digest: &str) -> String {
+    format!("{}@{digest}", repo_template.replace("{project}", project))
+}
+
 /// `docker://<repo>@<digest>` for skopeo.
 pub fn image_ref(repo_template: &str, project: &str, digest: &str) -> String {
-    format!("docker://{}@{digest}", repo_template.replace("{project}", project))
+    format!("docker://{}", pinned_ref(repo_template, project, digest))
 }
 
 pub struct ImageStore {

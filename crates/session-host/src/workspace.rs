@@ -125,12 +125,15 @@ impl Workspace {
 pub struct WorkspaceStore {
     root: PathBuf,
     open: Mutex<HashMap<String, Arc<Workspace>>>,
+    /// Held while a workspace is read from or created on disk, so concurrent first starts of
+    /// one workspace never write its state file at the same time.
+    loading: tokio::sync::Mutex<()>,
 }
 
 impl WorkspaceStore {
     /// Workspaces live in `<data_root>/workspaces`; nothing is created until [`Self::start`].
     pub fn new(data_root: &Path) -> Self {
-        Self { root: data_root.join("workspaces"), open: Mutex::new(HashMap::new()) }
+        Self { root: data_root.join("workspaces"), open: Mutex::new(HashMap::new()), loading: tokio::sync::Mutex::new(()) }
     }
 
     /// Creates or resumes the workspace for `(project, user_id)`. A `session_id` replaces the one
@@ -149,27 +152,35 @@ impl WorkspaceStore {
         let ws = match self.cached(&id) {
             Some(ws) => ws,
             None => {
-                let root = self.root.join(&id);
-                let project_dir = root.join(PROJECT_DIR);
-                tokio::fs::create_dir_all(&project_dir).await.map_err(|source| WorkspaceError::Io { path: project_dir.clone(), source })?;
-                let state = match read_state(&root).await? {
-                    Some(state) if state.project == project && state.user_id == user_id => state,
-                    Some(_) => {
-                        return Err(WorkspaceError::Corrupt { id, reason: "recorded project/user do not match the id".into() });
-                    }
-                    None => {
-                        let state = State { project: project.to_owned(), user_id: user_id.to_owned(), session_id: None };
-                        write_state(&id, &root, &state).await?;
-                        state
-                    }
-                };
-                self.remember(id, root, state)
+                let _loading = self.loading.lock().await;
+                // Another caller may have loaded it while this one waited.
+                match self.cached(&id) {
+                    Some(ws) => ws,
+                    None => self.load_or_create(id, project, user_id).await?,
+                }
             }
         };
         if let Some(s) = session_id {
             ws.set_session_id(s).await?;
         }
         Ok(ws)
+    }
+
+    /// Reads the workspace's state back, or creates it. Callers hold [`Self::loading`].
+    async fn load_or_create(&self, id: String, project: &str, user_id: &str) -> Result<Arc<Workspace>, WorkspaceError> {
+        let root = self.root.join(&id);
+        let project_dir = root.join(PROJECT_DIR);
+        tokio::fs::create_dir_all(&project_dir).await.map_err(|source| WorkspaceError::Io { path: project_dir.clone(), source })?;
+        let state = match read_state(&root).await? {
+            Some(state) if state.project == project && state.user_id == user_id => state,
+            Some(_) => return Err(WorkspaceError::Corrupt { id, reason: "recorded project/user do not match the id".into() }),
+            None => {
+                let state = State { project: project.to_owned(), user_id: user_id.to_owned(), session_id: None };
+                write_state(&id, &root, &state).await?;
+                state
+            }
+        };
+        Ok(self.remember(id, root, state))
     }
 
     /// Opens an existing workspace by id (after a restart it is read back from disk).
@@ -189,6 +200,22 @@ impl WorkspaceStore {
             return Err(WorkspaceError::Corrupt { id: id.to_owned(), reason: format!("recorded session id `{s}` is not hex") });
         }
         Ok(self.remember(id.to_owned(), root, state))
+    }
+
+    /// The workspace of `(project, user_id)` if it was ever started (after a restart it is read
+    /// back from disk). Never creates one: `None` leaves the disk untouched.
+    pub async fn find(&self, project: &str, user_id: &str) -> Result<Option<Arc<Workspace>>, WorkspaceError> {
+        if !is_project_slug(project) {
+            return Err(WorkspaceError::InvalidProject(project.to_owned()));
+        }
+        if !is_user_id(user_id) {
+            return Err(WorkspaceError::InvalidUser);
+        }
+        match self.open(&workspace_id(project, user_id)).await {
+            Ok(ws) => Ok(Some(ws)),
+            Err(WorkspaceError::NotFound(_)) => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     fn cached(&self, id: &str) -> Option<Arc<Workspace>> {
@@ -298,6 +325,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn concurrent_first_starts_of_one_workspace_all_succeed() {
+        // The console's dev build starts a workspace twice at once (React StrictMode runs the
+        // effect twice); both writers renamed the same temp file and the loser got a 500.
+        for round in 0..20 {
+            let dir = tempfile::tempdir().unwrap();
+            let store = WorkspaceStore::new(dir.path());
+            let user = format!("u{round}");
+            let started = futures::future::join_all((0..8).map(|_| store.start("shop", &user, None))).await;
+            let first = started[0].as_ref().unwrap();
+            for ws in &started {
+                assert!(Arc::ptr_eq(first, ws.as_ref().unwrap()), "every caller shares one workspace");
+            }
+            assert!(!first.root.join(STATE_TMP).exists());
+            assert!(WorkspaceStore::new(dir.path()).open(&first.id).await.is_ok());
+        }
+    }
+
+    #[tokio::test]
     async fn bad_input_is_refused_before_touching_disk() {
         let dir = tempfile::tempdir().unwrap();
         let store = WorkspaceStore::new(dir.path());
@@ -310,5 +355,21 @@ mod tests {
         assert!(!dir.path().join("workspaces").exists());
         let ws = store.start("shop", "u1", None).await.unwrap();
         assert!(matches!(ws.set_session_id("-x").await, Err(WorkspaceError::InvalidSession(_))));
+    }
+
+    #[tokio::test]
+    async fn find_never_creates_and_sees_started_workspaces_across_restarts() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = WorkspaceStore::new(dir.path());
+        assert!(store.find("shop", "u1").await.unwrap().is_none());
+        assert!(matches!(store.find("Bad", "u1").await, Err(WorkspaceError::InvalidProject(_))));
+        assert!(matches!(store.find("shop", "").await, Err(WorkspaceError::InvalidUser)));
+        assert!(!dir.path().join("workspaces").exists(), "looking is not starting");
+
+        let started = store.start("shop", "u1", Some("abc")).await.unwrap();
+        assert!(Arc::ptr_eq(&store.find("shop", "u1").await.unwrap().unwrap(), &started));
+        assert!(store.find("shop", "u2").await.unwrap().is_none());
+        let found = WorkspaceStore::new(dir.path()).find("shop", "u1").await.unwrap().unwrap();
+        assert_eq!((found.id.as_str(), found.session_id().await.as_deref()), (started.id.as_str(), Some("abc")));
     }
 }

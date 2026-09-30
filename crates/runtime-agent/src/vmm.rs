@@ -62,6 +62,8 @@ pub enum VmmError {
     NotFound(String),
     #[error("guest control: {0}")]
     Control(String),
+    #[error("docker: {0}")]
+    Docker(String),
 }
 
 /// Boots, stops and reaches replicas.

@@ -8,6 +8,7 @@ mod orgs;
 mod projects;
 mod releases;
 mod secrets;
+mod workspace;
 
 use axum::Router;
 use axum::extract::rejection::JsonRejection;
@@ -74,6 +75,9 @@ pub fn router(state: AppState) -> Router {
         .route(r::DOMAINS, get(domains::list).post(domains::add))
         .route(r::DOMAIN_VERIFY, post(domains::verify))
         .route(r::WORKSPACES, post(projects::workspace))
+        .route(r::WORKSPACE_FILES, get(workspace::files))
+        .route(r::WORKSPACE_FILE, get(workspace::file))
+        .route(r::WORKSPACE_DEPLOY, post(workspace::deploy))
         .route(r::LEDGER, get(projects::ledger))
         .route(r::SECRETS, get(secrets::list).put(secrets::set).post(secrets::set))
         .route(ir::SITES, get(internal::sites))

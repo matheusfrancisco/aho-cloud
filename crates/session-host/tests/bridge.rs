@@ -181,8 +181,8 @@ async fn hello(ws: &mut Ws) -> Value {
     frame["payload"].clone()
 }
 
-/// Connects and says hello, retrying while the workspace's previous connection is still being
-/// torn down (refused with 1013).
+/// Connects and says hello, retrying while the host is at its connection limit (refused with
+/// 1013) because an earlier connection is still being torn down.
 async fn hello_when_free(url: &str) -> (Ws, Value) {
     let deadline = Instant::now() + STEP;
     loop {
@@ -422,7 +422,7 @@ async fn child_exit_closes_the_socket() {
 }
 
 #[tokio::test]
-async fn connection_limits_per_workspace_and_per_host() {
+async fn a_newer_connection_takes_the_workspace_over_and_the_host_limit_refuses() {
     let h = host(Limits { max_connections: 2, max_per_workspace: 1, ..fast() }).await;
     let one = h.start("shop", "u1").await;
     let two = h.start("shop", "u2").await;
@@ -431,22 +431,35 @@ async fn connection_limits_per_workspace_and_per_host() {
     let mut a = connect(&url(&one)).await;
     hello(&mut a).await;
 
-    let mut same_workspace = connect(&url(&one)).await;
-    let (texts, close) = recv_close(&mut same_workspace).await;
-    assert_eq!(close.code, CloseCode::Again);
-    assert!(close.reason.contains("workspace"), "{close:?}");
+    // A reload or second tab: the newer connection wins, the old one is told why and closed,
+    // and the new one is admitted once the old child is gone (one writer per session).
+    let newer = tokio::spawn({
+        let url = url(&one);
+        async move {
+            let mut ws = connect(&url).await;
+            let ok = hello(&mut ws).await;
+            (ws, ok)
+        }
+    });
+    let (texts, close) = recv_close(&mut a).await;
+    assert_eq!(u16::from(close.code), cloud_session_host::bridge::CLOSE_REPLACED, "{close:?}");
     assert_eq!(texts[0]["event"], "error");
+    assert!(texts[0]["payload"]["message"].as_str().unwrap().contains("another window"), "{texts:?}");
+    let (mut same_workspace, _) = tokio::time::timeout(STEP, newer).await.unwrap().unwrap();
+    send_text(&mut same_workspace, json!({"v": 1, "id": 7, "method": "session.fold"}).to_string()).await;
+    assert_eq!(recv_json(&mut same_workspace).await["payload"]["id"], 7);
 
     let mut b = connect(&url(&two)).await;
     hello(&mut b).await;
 
+    // The host limit never replaces anyone: refused right away with 1013.
     let mut over_host = connect(&url(&three)).await;
     let (_, close) = recv_close(&mut over_host).await;
     assert_eq!(close.code, CloseCode::Again);
     assert!(close.reason.contains("connection limit"), "{close:?}");
 
-    // The refused connections held no slot; closing `a` frees one for workspace three.
-    close_and_drain(a).await;
+    // Closing a connection frees its slot for workspace three.
+    close_and_drain(same_workspace).await;
     let (_c, ok) = hello_when_free(&url(&three)).await;
     assert_eq!(ok["session"], NEW_SESSION);
     // `b` is unaffected throughout.

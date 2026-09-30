@@ -189,7 +189,8 @@ async fn magic_link_signs_in_once() {
     assert_eq!(sent.status(), 200);
     let mail = h.mails.0.lock().pop().unwrap();
     assert_eq!(mail.to, "ann@acme.com");
-    assert!(mail.link.starts_with("https://ml.test/.edge/magic?token="));
+    // Served on the plain listener, so the link points back at it (TLS listeners give https).
+    assert!(mail.link.starts_with("http://ml.test/.edge/magic?token="), "{}", mail.link);
     assert!(mail.text().contains(&mail.link));
 
     // Opening the link (e.g. by a mail scanner) does not consume it; confirming does.
@@ -284,7 +285,7 @@ async fn oidc_harness() -> (Harness, FakeIdp) {
 async fn oidc_login_with_pkce_state_and_nonce() {
     let (h, idp) = oidc_harness().await;
     let (callback, mut jar, authorize) = oidc_to_callback(&h, "sso.test").await;
-    assert_eq!(param(&authorize, "redirect_uri"), "https://sso.test/.edge/callback");
+    assert_eq!(param(&authorize, "redirect_uri"), "http://sso.test/.edge/callback", "the listener it arrived on");
     assert_eq!(param(&authorize, "scope"), "openid email profile");
     assert_eq!(jar.get("__Host-edge_oidc"), Some(param(&authorize, "state").as_str()));
 

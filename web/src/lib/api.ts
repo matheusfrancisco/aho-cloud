@@ -4,6 +4,7 @@
 import { fill, routes } from "../gen/api";
 import type {
   AddDomain,
+  AddMember,
   ApiError as WireApiError,
   Approve,
   CheckManifest,
@@ -12,9 +13,12 @@ import type {
   CreateProject,
   DeviceApprove,
   DomainView,
+  FileContent,
+  FileTree,
   GrantStandingOrders,
   LedgerEntry,
   Me,
+  Member,
   Org,
   PasskeyChallenge,
   PasskeyFinish,
@@ -31,8 +35,9 @@ import type {
   SecretView,
   SetSecret,
   Workspace,
+  WorkspaceDeployed,
 } from "../gen/api";
-import type { Refusal } from "../gen/contract";
+import type { Manifest, Refusal, ReleasePolicy } from "../gen/contract";
 import { currentToken, signOut } from "./session";
 
 /** A failed API call: the server's `ApiError` body, or a transport failure described the same way. */
@@ -153,6 +158,16 @@ export class Api {
   createOrg(body: CreateOrg) {
     return this.request<Org>("POST", routes.ORGS, body);
   }
+  members(org: string) {
+    return this.request<Member[]>("GET", fill(routes.ORG_MEMBERS, { org }));
+  }
+  /** Owners only; the user must have signed in once. */
+  addMember(org: string, body: AddMember) {
+    return this.request<Member>("POST", fill(routes.ORG_MEMBERS, { org }), body);
+  }
+  policy(org: string) {
+    return this.request<ReleasePolicy>("GET", fill(routes.ORG_POLICY, { org }));
+  }
   projects(org: string) {
     return this.request<Project[]>("GET", fill(routes.ORG_PROJECTS, { org }));
   }
@@ -223,6 +238,17 @@ export class Api {
   /** Starts a workspace, or resumes `sessionId`'s with a fresh socket token. The body type is not in the generated API yet. */
   startWorkspace(p: string, sessionId?: string) {
     return this.request<Workspace>("POST", fill(routes.WORKSPACES, { p }), sessionId === undefined ? {} : { session_id: sessionId });
+  }
+  /** Ships the caller's workspace files: the workspace's `deploy.json` without `manifest`, else the confirmed manifest. */
+  workspaceDeploy(p: string, manifest?: Manifest) {
+    return this.request<WorkspaceDeployed>("POST", fill(routes.WORKSPACE_DEPLOY, { p }), manifest === undefined ? {} : { manifest });
+  }
+  /** What a deploy would ship, in path order. */
+  workspaceFiles(p: string) {
+    return this.request<FileTree>("GET", fill(routes.WORKSPACE_FILES, { p }));
+  }
+  workspaceFile(p: string, path: string) {
+    return this.request<FileContent>("GET", `${fill(routes.WORKSPACE_FILE, { p })}?path=${encodeURIComponent(path)}`);
   }
 }
 

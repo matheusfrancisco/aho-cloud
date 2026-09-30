@@ -26,6 +26,12 @@ pub mod routes {
     pub const OBSERVATIONS: &str = "/internal/v1/observations";
     /// session-host: `POST` a [`super::StartWorkspace`] → [`super::WorkspaceStarted`].
     pub const WORKSPACES: &str = "/internal/v1/workspaces";
+    /// session-host: `POST` a [`super::WorkspaceRef`] → [`super::WorkspacePackage`].
+    pub const WORKSPACE_PACKAGE: &str = "/internal/v1/workspaces/package";
+    /// session-host: `POST` a [`super::WorkspaceRef`] → [`crate::FileTree`].
+    pub const WORKSPACE_FILES: &str = "/internal/v1/workspaces/files";
+    /// session-host: `POST` a [`super::WorkspaceFileRef`] → [`crate::FileContent`].
+    pub const WORKSPACE_FILE: &str = "/internal/v1/workspaces/file";
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -173,4 +179,49 @@ pub struct WorkspaceStarted {
     /// Workspace-scoped token (see session-host `token` module); short-lived.
     pub token: String,
     pub preview_url: String,
+}
+
+/// The workspace of `user_id` in `project` (the session host derives its id from the pair).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceRef {
+    pub project: String,
+    pub user_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceFileRef {
+    pub project: String,
+    pub user_id: String,
+    /// `/`-separated, relative to the workspace root.
+    pub path: String,
+}
+
+/// Everything a deploy of one workspace needs, packed by the session host.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspacePackage {
+    /// Deterministic `.tar.gz` of the workspace files, base64 (standard, padded).
+    pub archive: String,
+    /// `blake3:<hex>` of the archive bytes.
+    pub archive_hash: String,
+    pub files: u64,
+    /// The newest aho session log in the workspace, chain-verified by the session host.
+    #[serde(default)]
+    pub session: Option<PackagedSession>,
+    /// The workspace's `deploy.json`, when present and parseable.
+    #[serde(default)]
+    pub manifest: Option<Manifest>,
+    /// Why `deploy.json` exists but could not be used.
+    #[serde(default)]
+    pub manifest_error: Option<String>,
+    /// Drafted from `deploy.json`, the files and the session; `source` points at the archive.
+    pub draft: cloud_contract::draft::Draft,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PackagedSession {
+    pub session_id: String,
+    pub head_hash: String,
+    pub entries: u64,
+    /// The JSONL log, base64 (standard, padded).
+    pub jsonl: String,
 }

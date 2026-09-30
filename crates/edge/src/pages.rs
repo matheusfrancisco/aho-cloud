@@ -57,7 +57,10 @@ pub(crate) fn html(status: StatusCode, title: &str, body: &str) -> Response<Body
     );
     h.insert(header::X_FRAME_OPTIONS, HeaderValue::from_static("DENY"));
     h.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
-    h.insert(header::REFERRER_POLICY, HeaderValue::from_static("no-referrer"));
+    // `same-origin`, not `no-referrer`: under `no-referrer` browsers send `Origin: null` on the
+    // page's own form posts, which the cross-site check must refuse. Nothing leaks cross-origin
+    // either way (magic-link tokens live in these URLs).
+    h.insert(header::REFERRER_POLICY, HeaderValue::from_static("same-origin"));
     resp
 }
 
@@ -181,5 +184,14 @@ mod tests {
         assert!(page.contains("value=\"/&quot;&gt;&lt;script&gt;"), "rd cannot close its attribute");
         assert!(page.contains("&lt;b&gt;"));
         assert!(page.contains("c&#39;x"));
+    }
+
+    #[test]
+    fn login_pages_let_browsers_send_origin_on_their_own_form_posts() {
+        // Under `no-referrer` Chromium sends `Origin: null` with the login form's POST, and the
+        // cross-site check refuses it: nobody could sign in (found running the local stack).
+        let page = html(StatusCode::OK, "Sign in", "");
+        let policy = page.headers().get(header::REFERRER_POLICY).and_then(|v| v.to_str().ok());
+        assert!(matches!(policy, Some("same-origin" | "strict-origin" | "strict-origin-when-cross-origin")), "{policy:?}");
     }
 }

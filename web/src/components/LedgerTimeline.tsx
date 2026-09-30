@@ -31,7 +31,8 @@ function signer(a: Approver): ReactNode {
   );
 }
 
-function describe(project: string, body: LedgerBody): ReactNode {
+/** One ledger fact as a line of text, release ids linked to their approval cards. */
+export function describeEntry(project: string, body: LedgerBody): ReactNode {
   const rel = (r: string) => (
     <Link to={`/projects/${encodeURIComponent(project)}/releases/${encodeURIComponent(r)}`}>
       <code>{r}</code>
@@ -111,6 +112,12 @@ function describe(project: string, body: LedgerBody): ReactNode {
           {signer(body.approver)}
         </>
       );
+    case "members_changed":
+      return (
+        <>
+          organization now has {body.count} member{body.count === 1 ? "" : "s"}; approvals are capped at that count
+        </>
+      );
   }
 }
 
@@ -126,7 +133,7 @@ export function LedgerTimeline({ project, entries }: { project: string; entries:
             <Time ms={e.at} />
             <Hash value={e.hash} />
           </div>
-          <div>{describe(project, e.body)}</div>
+          <div>{describeEntry(project, e.body)}</div>
         </li>
       ))}
     </ol>

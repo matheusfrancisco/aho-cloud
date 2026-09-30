@@ -7,8 +7,10 @@ use std::net::IpAddr;
 
 use async_trait::async_trait;
 use cloud_api::internal::{
-    BuildJob, BuildResult, Deployment, DeploymentStatus, Maintenance, ProcessStatus, RunState, Scale, StartWorkspace, WorkspaceStarted,
+    BuildJob, BuildResult, Deployment, DeploymentStatus, Maintenance, ProcessStatus, RunState, Scale, StartWorkspace, WorkspaceFileRef,
+    WorkspacePackage, WorkspaceRef, WorkspaceStarted,
 };
+use cloud_api::{FileContent, FileEntry, FileKind, FileTree};
 use cloud_contract::ledger::Stage;
 use cloud_domains::{DnsError, Resolver, normalize_name};
 use futures::future::BoxFuture;
@@ -171,10 +173,20 @@ impl RuntimeService for FakeRuntime {
     }
 }
 
-/// A session host that hands out `wss://sessions.test/rpc/<project>` workspaces.
+/// A session host that hands out `wss://sessions.test/rpc/<project>` workspaces and serves the
+/// packages and files put into it, per `(project, user_id)`.
 #[derive(Default)]
 pub struct FakeSessionHost {
     requests: Mutex<Vec<StartWorkspace>>,
+    workspaces: Mutex<BTreeMap<(String, String), FakeWorkspace>>,
+    packed: Mutex<Vec<WorkspaceRef>>,
+}
+
+#[derive(Default)]
+struct FakeWorkspace {
+    package: Option<WorkspacePackage>,
+    /// Path → text.
+    files: BTreeMap<String, String>,
 }
 
 impl FakeSessionHost {
@@ -185,6 +197,29 @@ impl FakeSessionHost {
     pub fn requests(&self) -> Vec<StartWorkspace> {
         self.requests.lock().clone()
     }
+
+    /// Every workspace a deploy packed, in order.
+    pub fn packed(&self) -> Vec<WorkspaceRef> {
+        self.packed.lock().clone()
+    }
+
+    /// What [`SessionHostService::package`] answers for `user_id`'s workspace in `project`.
+    pub fn put_package(&self, project: &str, user_id: &str, package: WorkspacePackage) {
+        self.workspaces.lock().entry((project.to_owned(), user_id.to_owned())).or_default().package = Some(package);
+    }
+
+    /// A text file at `path` (`/`-separated) in `user_id`'s workspace in `project`.
+    pub fn put_file(&self, project: &str, user_id: &str, path: &str, text: &str) {
+        self.workspaces.lock().entry((project.to_owned(), user_id.to_owned())).or_default().files.insert(path.to_owned(), text.to_owned());
+    }
+
+    fn missing(what: String) -> PortError {
+        PortError::NotFound { service: "session-host", message: what }
+    }
+}
+
+fn size_of(text: &str) -> u64 {
+    u64::try_from(text.len()).unwrap_or(u64::MAX)
 }
 
 #[async_trait]
@@ -199,6 +234,39 @@ impl SessionHostService for FakeSessionHost {
         };
         self.requests.lock().push(request);
         Ok(started)
+    }
+
+    async fn package(&self, workspace: WorkspaceRef) -> Result<WorkspacePackage, PortError> {
+        let package = self.workspaces.lock().get(&(workspace.project.clone(), workspace.user_id.clone())).and_then(|w| w.package.clone());
+        let package = package.ok_or_else(|| Self::missing(format!("no workspace for {} in {}", workspace.user_id, workspace.project)))?;
+        self.packed.lock().push(workspace);
+        Ok(package)
+    }
+
+    async fn files(&self, workspace: WorkspaceRef) -> Result<FileTree, PortError> {
+        let g = self.workspaces.lock();
+        let w = g
+            .get(&(workspace.project.clone(), workspace.user_id.clone()))
+            .ok_or_else(|| Self::missing(format!("no workspace for {} in {}", workspace.user_id, workspace.project)))?;
+        // Every file plus the directories above it, in path order, like the real listing.
+        let mut entries: BTreeMap<String, FileEntry> = BTreeMap::new();
+        for (path, text) in &w.files {
+            for (end, _) in path.match_indices('/') {
+                let dir = &path[..end];
+                entries.entry(dir.to_owned()).or_insert_with(|| FileEntry { path: dir.to_owned(), kind: FileKind::Dir, size: 0 });
+            }
+            entries.insert(path.clone(), FileEntry { path: path.clone(), kind: FileKind::File, size: size_of(text) });
+        }
+        Ok(FileTree { files: entries.into_values().collect(), truncated: false })
+    }
+
+    async fn file(&self, file: WorkspaceFileRef) -> Result<FileContent, PortError> {
+        let g = self.workspaces.lock();
+        let text = g
+            .get(&(file.project.clone(), file.user_id.clone()))
+            .and_then(|w| w.files.get(&file.path))
+            .ok_or_else(|| Self::missing(format!("no file {} in the workspace", file.path)))?;
+        Ok(FileContent { path: file.path.clone(), size: size_of(text), text: Some(text.clone()), truncated: false })
     }
 }
 

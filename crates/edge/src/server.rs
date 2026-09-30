@@ -260,7 +260,7 @@ fn redirect(inner: &Inner, req: Request<Incoming>) -> Response<Body> {
             None => pages::text(StatusCode::NOT_FOUND, "no such challenge\n"),
         };
     }
-    let Some(host) = headers::host_of(req.uri(), req.headers()) else {
+    let Some(host) = headers::host_of(req.uri(), req.headers(), "http") else {
         return pages::text(StatusCode::BAD_REQUEST, "missing or invalid Host\n");
     };
     let Some(site) = inner.directory.site(&host.name) else { return pages::misdirected() };
@@ -272,7 +272,7 @@ fn redirect(inner: &Inner, req: Request<Incoming>) -> Response<Body> {
 }
 
 async fn app(inner: &Inner, conn: &Conn, mut req: Request<Incoming>) -> Response<Body> {
-    let Some(host) = headers::host_of(req.uri(), req.headers()) else {
+    let Some(host) = headers::host_of(req.uri(), req.headers(), conn.scheme) else {
         return pages::text(StatusCode::BAD_REQUEST, "missing or invalid Host\n");
     };
     if conn.sni.as_deref().is_some_and(|sni| sni != host.name) {

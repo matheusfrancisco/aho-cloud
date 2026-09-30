@@ -1,6 +1,6 @@
 // A release's approval card plus the actions on it: approve (passkey over the approval message),
 // reject, promote, roll back to it, and the on-call standing-orders grant.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { SecretForm } from "../components/Secrets";
@@ -10,6 +10,7 @@ import type { Stage } from "../gen/contract";
 import { api } from "../lib/api";
 import { approvalMessage } from "../lib/approval";
 import { approvalProgress, groupChanges, nextStage, STAGES } from "../lib/release";
+import { setCurrentOrg } from "../lib/remembered";
 import { currentSession, useSession } from "../lib/session";
 import { passkeyProof } from "../lib/webauthn";
 import { ErrorBox, Loading } from "../ui/common";
@@ -126,6 +127,10 @@ export function ReleasePage() {
     return { release, project };
   }, [p, r]);
   const [chosen, setChosen] = useState<Stage | null>(null);
+  const org = loaded.data?.project.org;
+  useEffect(() => {
+    if (org !== undefined) setCurrentOrg(org);
+  }, [org]);
 
   if (loaded.data === undefined) {
     return (
@@ -145,9 +150,9 @@ export function ReleasePage() {
 
   return (
     <section>
-      <p className="crumbs">
-        <Link to={`/projects/${encodeURIComponent(p)}`}>{p}</Link> / releases / {r}
-      </p>
+      <nav className="crumbs" aria-label="Breadcrumb">
+        <Link to={`/orgs/${encodeURIComponent(project.org)}`}>{project.org}</Link> / <Link to={`/projects/${encodeURIComponent(p)}`}>{p}</Link> / releases / {r}
+      </nav>
       <ErrorBox error={loaded.error} />
       <ApprovalCard release={release} stage={stage} />
       {release.taint.length > 0 && (

@@ -1,0 +1,27 @@
+[package]
+name = "cloud-workdir"
+description = "A project directory as the cloud sees it: the deterministic source archive, the file tree and file reads a console shows, the aho session that attests it, and the draft manifest assembled from deploy.json, repo files and that session."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cloud-api.workspace = true
+cloud-contract.workspace = true
+cloud-draft.workspace = true
+cloud-importers.workspace = true
+blake3.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+ignore = "0.4"
+tar = "0.4"
+flate2 = "1"
+
+[dev-dependencies]
+aho-log.workspace = true
+aho-types.workspace = true
+tempfile.workspace = true
+
+[lints]
+workspace = true

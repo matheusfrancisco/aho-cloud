@@ -84,7 +84,26 @@ pub async fn add_member(
         }
     }
     st.store.put_member(&MemberRec { org: org.slug.clone(), user_id: added.id.clone(), owner: body.owner }).await?;
+    record_member_count(&st, &org.slug).await?;
     Ok(Json(Member { user: user_view(&added), owner: body.owner }))
+}
+
+/// How many members `org` has, for the ledgers' quorum cap.
+async fn member_count(st: &AppState, org: &str) -> Result<u16, AppError> {
+    Ok(u16::try_from(st.store.members(org).await?.len()).unwrap_or(u16::MAX))
+}
+
+/// Records `org`'s member count in the ledger of each of its projects that has a different one
+/// (or none): no approval quorum may exceed the humans there are.
+async fn record_member_count(st: &AppState, org: &str) -> Result<(), AppError> {
+    let count = member_count(st, org).await?;
+    for p in st.store.projects().await?.into_iter().filter(|p| p.org == org && p.deleted_at.is_none()) {
+        let ledger = st.ledgers.get(&p.slug)?;
+        if ledger.state()?.members != Some(count) {
+            ledger.members_changed(count)?;
+        }
+    }
+    Ok(())
 }
 
 pub async fn policy(State(st): State<AppState>, Caller(user): Caller, Path(org): Path<String>) -> Result<Json<ReleasePolicy>, AppError> {
@@ -137,6 +156,7 @@ pub async fn create_project(
     if let Some(a) = org.policy_approver.clone() {
         ledger.set_policy(org.policy.clone(), a)?;
     }
+    ledger.members_changed(member_count(&st, &org.slug).await?)?;
     let registry = st.registry.lock().await.clone();
     Ok((StatusCode::CREATED, Json(view::project(&body.slug, &org.slug, &ledger.state()?, &registry))))
 }

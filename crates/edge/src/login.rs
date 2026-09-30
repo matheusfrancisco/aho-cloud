@@ -81,7 +81,7 @@ fn safe_rd(rd: Option<&str>) -> String {
 }
 
 fn redirect_uri(host: &Host) -> String {
-    format!("https://{}{CALLBACK_PATH}", host.authority)
+    format!("{}{CALLBACK_PATH}", host.origin())
 }
 
 fn session_of(inner: &Inner, site: &Site, host: &Host, headers: &HeaderMap) -> Option<Session> {
@@ -150,10 +150,7 @@ fn same_origin(headers: &HeaderMap, host: &Host) -> bool {
     }
     match headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) {
         None => true,
-        Some(origin) => origin
-            .strip_prefix("https://")
-            .or_else(|| origin.strip_prefix("http://"))
-            .is_some_and(|o| o.eq_ignore_ascii_case(&host.authority)),
+        Some(origin) => origin.eq_ignore_ascii_case(&host.origin()),
     }
 }
 
@@ -253,7 +250,7 @@ async fn login_submit(inner: &Inner, site: &Site, host: &Host, req: Request<Inco
             let mail = MagicLinkMail {
                 to: email.clone(),
                 host: host.name.clone(),
-                link: format!("https://{}{MAGIC_PATH}?token={token}", host.authority),
+                link: format!("{}{MAGIC_PATH}?token={token}", host.origin()),
                 expires_in_secs: MAGIC_TTL_SECS,
             };
             if let Err(e) = mailer.send_magic_link(&mail).await {
@@ -450,7 +447,7 @@ mod tests {
 
     #[test]
     fn origin_checks() {
-        let host = Host { name: "app.test".into(), authority: "app.test:8443".into() };
+        let host = Host { name: "app.test".into(), authority: "app.test:8443".into(), scheme: "https" };
         let h = |pairs: &[(&'static str, &str)]| {
             let mut m = HeaderMap::new();
             for (k, v) in pairs {
@@ -462,6 +459,8 @@ mod tests {
         assert!(same_origin(&h(&[("origin", "https://app.test:8443"), ("sec-fetch-site", "same-origin")]), &host));
         assert!(!same_origin(&h(&[("origin", "https://evil.test")]), &host));
         assert!(!same_origin(&h(&[("origin", "null")]), &host));
+        // The scheme is part of the origin: an http page cannot post to the https site.
+        assert!(!same_origin(&h(&[("origin", "http://app.test:8443")]), &host));
         assert!(!same_origin(&h(&[("sec-fetch-site", "cross-site")]), &host));
     }
 }

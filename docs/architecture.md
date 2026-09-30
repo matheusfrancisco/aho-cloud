@@ -23,12 +23,13 @@ internet ──► edge (TLS, routes, auth, X-Principal-JWT, webhook verifiers) 
 | `ledger` | per-project release ledger on `aho-log` (hash chain, fold, invariants). |
 | `control-plane` | the API server: auth (device flow, passkeys, device keys), orgs, projects, releases, approvals, domains, secrets, workspaces. |
 | `builder` | source → OCI image (Dockerfile / buildpack / command) via BuildKit and `pack`. |
-| `runtime-agent` | per-host daemon: microVM lifecycle, cgroup ceilings, health checks, maintenance/sleep; `cloud-guest` PID 1 inside each VM. |
+| `runtime-agent` | per-host daemon: microVM lifecycle, cgroup ceilings, health checks, maintenance/sleep; `cloud-guest` PID 1 inside each VM. `--backend docker` runs replicas as containers for local development (no isolation, no egress enforcement). |
 | `domains` | domain bindings: TXT tokens, DNS checks, grace/tombstone, ACME, certificate store, RDAP expiry. |
 | `edge` | reverse proxy: route modes, edge login (password / magic link / OIDC), principal JWT minting, JWKS, webhook signature verifiers, tombstone pages. |
-| `session-host` | Entry A: runs `ahoc` per workspace and bridges aho rpc (NDJSON) to a WebSocket. |
+| `session-host` | Entry A: runs `ahoc` per workspace and bridges aho rpc (NDJSON) to a WebSocket; serves the workspace's file tree, files and deploy package to the control plane. |
 | `draft` | aho session log → manifest draft with per-field evidence. |
 | `importers` | repo files (Dockerfile, Procfile, compose, fly.toml, render.yaml, app.yaml, package.json) → draft. |
+| `workdir` | a project directory as the cloud sees it: the deterministic source archive, the file tree and file reads (same walk: `.gitignore` honored, `.git`/`.aho` pruned, symlinks never followed or escaping), the attesting aho session log, and the draft (`deploy.json`'s declared fields, then repo files, then the session, merged by strength). Shared by `ahocloud` and `session-host`. |
 | `cap-deploy` | aho capability: `cloud_draft`, `cloud_propose` tools; `Deploy/*` entries. |
 | `cap-edge-contract` | aho capability: prompt section for the principal contract, `edge_routes`, `edge_verifier` tools. |
 | `bundle-cloud` | `cloud()` composition = aho-lab + the caps; `ahoc` binary (aho-sdk rpc). |
@@ -38,7 +39,10 @@ internet ──► edge (TLS, routes, auth, X-Principal-JWT, webhook verifiers) 
 ## Rules
 
 - **The model can propose, never approve.** Agents and CI append `release_proposed`; activation needs
-  signed human approvals meeting the org `ReleasePolicy` for the surface diff against live.
+  signed human approvals meeting the org `ReleasePolicy` for the surface diff against live. Every
+  quorum is capped at the org's member count (recorded in each project ledger as
+  `members_changed` at project creation and on every membership change; never below 1); an
+  owner is still required where the policy says so, so a one-person org's owner signs once per stage.
 - **The cloud rebuilds.** Local builds are never trusted; the manifest names source, the builder
   produces the digest.
 - **Secrets are names in documents, values only in the secret store and the runtime.** A value
@@ -52,6 +56,13 @@ internet ──► edge (TLS, routes, auth, X-Principal-JWT, webhook verifiers) 
 
 - **Entry A (web UI):** console → `POST /workspaces` → session-host starts `ahoc` in a VM world →
   browser speaks aho rpc over WebSocket. The agent calls `cloud_draft` / `cloud_propose`.
+  "Deploy to preview" (`POST /v1/projects/{p}/workspace/deploy`) has the session host pack the
+  caller's own workspace with its aho session log (the one the workspace resumes, else the
+  newest; one that does not verify refuses the package); the control plane re-hashes the archive
+  and re-verifies the log (stored and recorded exactly like uploads, so the release is
+  `Attested`), forces `source` to the archive, and runs the `POST releases` pipeline with the
+  request's manifest, else the workspace's `deploy.json`, else answers the draft to confirm and
+  send back.
 - **Entry B (local):** stock `aho` builds; `ahocloud login` binds a device key; `ahocloud deploy`
   drafts from `.aho/sessions/*.jsonl`, uploads source archive + session log, proposes.
 - **No aho:** `ahocloud manifest init` (importers) or a hand-written `deploy.json`; CI calls

@@ -402,6 +402,100 @@ fn a_policy_change_moves_the_requirement() {
     assert_eq!(ledger.state().unwrap().requirement("code", Stage::Staging), Some(Requirement { approvals: 3, owner_required: false }));
 }
 
+// ── member cap ───────────────────────────────────────────────────────────────────────────────
+
+/// Takes Preview-active `release` through Staging and Live with ana's (owner) approval alone.
+fn ship_alone<S: LogStore>(ledger: &Ledger<S>, release: &str, m: &Manifest) {
+    for stage in [Stage::Staging, Stage::Live] {
+        assert!(ledger.approve(release, stage, ana(release, m, stage)).unwrap().met, "{stage:?}");
+        ledger.activate(release, stage).unwrap();
+    }
+}
+
+#[test]
+fn the_member_count_caps_every_quorum_and_keeps_the_owner_rule() {
+    let ledger = Ledger::memory(PROJECT);
+    let m = base();
+    previewed(&ledger, "r1", &m);
+    let req =
+        |ledger: &Ledger<aho_log::MemoryLog>, release: &str, stage: Stage| ledger.state().unwrap().requirement(release, stage).unwrap();
+    assert_eq!(ledger.state().unwrap().members, None);
+    assert_eq!(req(&ledger, "r1", Stage::Staging), Requirement { approvals: 2, owner_required: true }, "the policy as written");
+
+    // A one-person org: the widening first release needs one approval, still the owner's.
+    ledger.members_changed(1).unwrap();
+    assert_eq!(ledger.state().unwrap().members, Some(1));
+    for stage in [Stage::Staging, Stage::Live] {
+        assert_eq!(req(&ledger, "r1", stage), Requirement { approvals: 1, owner_required: true });
+    }
+    assert_eq!(req(&ledger, "r1", Stage::Preview), Requirement { approvals: 0, owner_required: false });
+    let bo_only = ledger.approve("r1", Stage::Staging, bo("r1", &m, Stage::Staging)).unwrap();
+    assert_eq!((bo_only.approvals, bo_only.met), (1, false), "the cap lowers the count, never the owner rule");
+    assert!(matches!(ledger.activate("r1", Stage::Staging), Err(LedgerError::OwnerRequired { .. })));
+    ship_alone(&ledger, "r1", &m);
+    assert_eq!(live(&ledger.state().unwrap()), "r1");
+
+    // The cap only ever lowers: a bigger org gets the policy's numbers, never more.
+    previewed(&ledger, "egress", &with_egress());
+    for (members, want) in [(5, 2), (300, 2), (2, 2), (1, 1)] {
+        ledger.members_changed(members).unwrap();
+        assert_eq!(req(&ledger, "egress", Stage::Live), Requirement { approvals: want, owner_required: false }, "{members} members");
+    }
+    // Non-widening quorums are capped the same way, and never to zero.
+    let policy = ReleasePolicy { non_widening: 3, ..ReleasePolicy::default() };
+    ledger.set_policy(policy.clone(), signed("ana", true, &policy_message(PROJECT, &policy))).unwrap();
+    previewed(&ledger, "code", &code_only());
+    ledger.members_changed(2).unwrap();
+    assert_eq!(req(&ledger, "code", Stage::Staging), Requirement { approvals: 2, owner_required: false });
+    ledger.members_changed(1).unwrap();
+    assert_eq!(req(&ledger, "code", Stage::Staging), Requirement { approvals: 1, owner_required: false });
+}
+
+#[test]
+fn a_member_count_of_zero_is_refused_and_appends_nothing() {
+    let ledger = Ledger::memory(PROJECT);
+    ledger.members_changed(2).unwrap();
+    let before = ledger.entries().unwrap().len();
+    assert!(matches!(ledger.members_changed(0), Err(LedgerError::NoMembers)));
+    assert_eq!(ledger.entries().unwrap().len(), before);
+    assert_eq!(ledger.state().unwrap().members, Some(2), "the last good count stands");
+}
+
+#[test]
+fn a_reopened_ledger_keeps_the_member_cap_and_its_activations_need_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("ledger.jsonl");
+    let m = base();
+    {
+        let ledger = Ledger::open(PROJECT, &path).unwrap();
+        ledger.members_changed(1).unwrap();
+        previewed(&ledger, "r1", &m);
+        ledger.approve("r1", Stage::Staging, ana("r1", &m, Stage::Staging)).unwrap();
+        ledger.activate("r1", Stage::Staging).unwrap();
+    }
+    let ledger = Ledger::open(PROJECT, &path).unwrap();
+    let st = ledger.state().unwrap();
+    assert_eq!(st.members, Some(1));
+    assert_eq!(st.requirement("r1", Stage::Live), Some(Requirement { approvals: 1, owner_required: true }));
+    ledger.approve("r1", Stage::Live, ana("r1", &m, Stage::Live)).unwrap();
+    ledger.activate("r1", Stage::Live).unwrap();
+    drop(ledger);
+
+    // The aho-log fold replays the same cap.
+    let log = JsonlLog::open(&path).unwrap();
+    let folded = aho_log::fold(&log.read_branch(log.head().unwrap()).unwrap(), &custom_folds()).unwrap();
+    let st: LedgerState = serde_json::from_value(folded.custom["deploy"].clone()).unwrap();
+    assert_eq!((st.members, live(&st)), (Some(1), "r1"));
+    drop(log);
+
+    // Cutting the count out of the file leaves one-approval activations under a two-approval
+    // policy: the replay refuses them.
+    rechain(&path, |entries| entries.retain(|e| !matches!(body(e), LedgerBody::MembersChanged { .. })));
+    let err = Ledger::open(PROJECT, &path).unwrap().state().unwrap_err();
+    let LedgerError::Invariant { violation, .. } = err else { panic!("{err:?}") };
+    assert!(matches!(*violation, LedgerError::QuorumNotMet { stage: Stage::Staging, approvals: 1, .. }), "{violation:?}");
+}
+
 // ── rollback ─────────────────────────────────────────────────────────────────────────────────
 
 #[test]
