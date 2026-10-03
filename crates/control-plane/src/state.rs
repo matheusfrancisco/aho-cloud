@@ -1,4 +1,5 @@
-//! Shared server state: config, store, blobs, ledgers, the domain registry, ports, clock.
+//! Shared server state: config, store, blobs, ledgers, the domain registry, ports, clock, and the
+//! per-sandbox locks.
 
 use std::ops::Deref;
 use std::sync::Arc;
@@ -14,6 +15,7 @@ use crate::crypto::{SecretBox, b64url, b64url_decode};
 use crate::error::AppError;
 use crate::ledgers::Ledgers;
 use crate::ports::{BuildService, RuntimeService, SessionHostService};
+use crate::sandboxes::SlugLocks;
 use crate::store::Store;
 use crate::webauthn::RelyingParty;
 
@@ -41,6 +43,8 @@ pub struct Inner {
     pub jobs: TaskTracker,
     /// Serializes SITES version bumps.
     pub sites_lock: Mutex<()>,
+    /// One change at a time per sandbox.
+    pub sandbox_locks: SlugLocks,
 }
 
 /// Cheap to clone; one per server.
@@ -89,6 +93,7 @@ impl AppState {
             registry: Mutex::new(registry),
             jobs: TaskTracker::new(),
             sites_lock: Mutex::new(()),
+            sandbox_locks: SlugLocks::default(),
         })))
     }
 

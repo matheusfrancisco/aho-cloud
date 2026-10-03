@@ -13,7 +13,7 @@ use cloud_control_plane::clock::SystemClock;
 use cloud_control_plane::ledgers::Ledgers;
 use cloud_control_plane::ports::{HttpBuilder, HttpRuntime, HttpSessionHost, ServiceClient};
 use cloud_control_plane::store::{MemStore, PgStore, Store};
-use cloud_control_plane::{AppState, Config, MasterKey, Services, router};
+use cloud_control_plane::{AppState, Config, MasterKey, SandboxImage, Services, router};
 use cloud_domains::{EdgeTarget, HickoryResolver};
 
 /// The aho cloud control plane.
@@ -70,6 +70,10 @@ struct Args {
     /// Preview hostnames are `<project>.<preview-domain>`.
     #[arg(long, env = "AHO_CLOUD_PREVIEW_DOMAIN", default_value = "preview.aho.cloud")]
     preview_domain: String,
+    /// Preview URL template (`{project}` = slug), as the session host is given; defaults to
+    /// `https://{project}.<preview-domain>`. Sandbox URLs use it.
+    #[arg(long, env = "AHO_CLOUD_PREVIEW_URL")]
+    preview_url: Option<String>,
     #[arg(long, env = "AHO_CLOUD_DOMAIN_GRACE_SECS", default_value_t = 7 * 24 * 3600)]
     domain_grace_secs: u64,
     /// How often every domain binding is re-checked.
@@ -81,6 +85,23 @@ struct Args {
     /// Timeout for one build request.
     #[arg(long, env = "AHO_CLOUD_BUILD_TIMEOUT_SECS", default_value_t = 3600)]
     build_timeout_secs: u64,
+    /// Image sandboxes boot: `<repo>@sha256:<hex>`, the repo relative to the runtime's image
+    /// template (normally `aho.sandbox`). Without it, creating or starting a sandbox answers 503
+    /// `sandboxes_disabled`.
+    #[arg(long, env = "AHO_CLOUD_SANDBOX_IMAGE")]
+    sandbox_image: Option<String>,
+    /// vCPUs of each new sandbox.
+    #[arg(long, env = "AHO_CLOUD_SANDBOX_CPUS", default_value_t = 2, value_parser = clap::value_parser!(u8).range(1..))]
+    sandbox_cpus: u8,
+    /// Memory of each new sandbox, in MiB.
+    #[arg(long, env = "AHO_CLOUD_SANDBOX_MEM_MIB", default_value_t = 2048, value_parser = clap::value_parser!(u32).range(128..))]
+    sandbox_mem_mib: u32,
+    /// Disk of each new sandbox, in MiB.
+    #[arg(long, env = "AHO_CLOUD_SANDBOX_DISK_MIB", default_value_t = 10240, value_parser = clap::value_parser!(u32).range(512..))]
+    sandbox_disk_mib: u32,
+    /// Most sandboxes one org may have.
+    #[arg(long, env = "AHO_CLOUD_MAX_SANDBOXES_PER_ORG", default_value_t = 5)]
+    max_sandboxes_per_org: usize,
 }
 
 #[tokio::main]
@@ -100,6 +121,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     cfg.preview_domain = args.preview_domain;
     cfg.domain_grace_secs = args.domain_grace_secs;
     cfg.max_upload_bytes = args.max_upload_mib * 1024 * 1024;
+    cfg.preview_url = args.preview_url;
+    cfg.sandbox_image = match &args.sandbox_image {
+        Some(text) => Some(SandboxImage::parse(text).ok_or("--sandbox-image must be <repo>@sha256:<64 hex digits>")?),
+        None => {
+            tracing::warn!("no --sandbox-image: sandboxes are turned off");
+            None
+        }
+    };
+    cfg.sandbox_cpus = args.sandbox_cpus;
+    cfg.sandbox_mem_mib = args.sandbox_mem_mib;
+    cfg.sandbox_disk_mib = args.sandbox_disk_mib;
+    cfg.max_sandboxes_per_org = args.max_sandboxes_per_org;
 
     let (store, ledgers): (Arc<dyn Store>, Ledgers) = match &args.database_url {
         Some(url) => (Arc::new(PgStore::connect(url).await?), Ledgers::on_disk(args.data_dir.join("ledgers"))),
@@ -139,6 +172,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(0) => {}
                 Ok(n) => tracing::info!(transitions = n, "domain bindings changed"),
                 Err(error) => tracing::warn!(%error, "domain recheck failed"),
+            }
+        }
+    });
+
+    let stopper = state.clone();
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            tick.tick().await;
+            match cloud_control_plane::sandboxes::auto_stop(&stopper).await {
+                Ok(0) => {}
+                Ok(n) => tracing::info!(stopped = n, "sandboxes auto-stopped"),
+                Err(error) => tracing::warn!(%error, "sandbox auto-stop failed"),
             }
         }
     });

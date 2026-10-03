@@ -88,7 +88,7 @@ pub fn verify_session_log(text: &str) -> Result<VerifiedLog, String> {
     Ok(VerifiedLog { head_hash: entry.hash.to_string(), entries })
 }
 
-fn valid_session_id(id: &str) -> bool {
+pub(super) fn valid_session_id(id: &str) -> bool {
     (1..=128).contains(&id.len()) && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 

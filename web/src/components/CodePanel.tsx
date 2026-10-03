@@ -1,8 +1,9 @@
-// The Code tab: the workspace files a deploy would ship, as a collapsible tree, and a read-only
-// viewer. Refreshes on demand, shortly after aho touches something, and every 10 s while shown.
+// The Code / Files tab: a project workspace's files (what a deploy would ship) or a sandbox's
+// `/workspace`, as a collapsible tree, and a read-only viewer. Refreshes on demand, shortly after
+// aho touches something, and every 10 s while shown.
 import { useEffect, useMemo, useState } from "react";
 import type { FileContent } from "../gen/api";
-import { api } from "../lib/api";
+import { type AhoTarget, api } from "../lib/api";
 import { buildTree, type TreeNode } from "../lib/filetree";
 import { ErrorBox, formatBytes, Loading } from "../ui/common";
 import { useLoad } from "../ui/hooks";
@@ -72,14 +73,18 @@ function Tree({ nodes, depth, open, selected, onToggle, onSelect }: { nodes: Tre
   );
 }
 
-export function CodePanel({ project, refreshKey, intervalMs = 10_000 }: { project: string; refreshKey: number; intervalMs?: number }) {
-  const tree = useLoad(() => api.workspaceFiles(project), [project]);
+export function CodePanel({ target, refreshKey, intervalMs = 10_000 }: { target: AhoTarget; refreshKey: number; intervalMs?: number }) {
+  const name = target.kind === "project" ? target.project : target.sandbox;
+  const tree = useLoad(() => (target.kind === "project" ? api.workspaceFiles(target.project) : api.sandboxFiles(target.sandbox)), [target.kind, name]);
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
   const nodes = useMemo(() => (tree.data === undefined ? [] : buildTree(tree.data.files)), [tree.data]);
   const exists = selected !== null && tree.data !== undefined && tree.data.files.some((f) => f.path === selected);
   // Re-read the open file whenever the listing refreshes: aho may have just rewritten it.
-  const file = useLoad(() => (selected !== null && exists ? api.workspaceFile(project, selected) : Promise.resolve(null)), [project, selected, exists, tree.data]);
+  const file = useLoad(
+    () => (selected === null || !exists ? Promise.resolve(null) : target.kind === "project" ? api.workspaceFile(target.project, selected) : api.sandboxFile(target.sandbox, selected)),
+    [target.kind, name, selected, exists, tree.data],
+  );
   const { reload } = tree;
 
   // aho activity arrives in bursts; one refresh once it settles.

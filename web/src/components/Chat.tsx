@@ -1,11 +1,12 @@
-// Entry A: the browser talks aho rpc to the project's workspace session. Prompts, the live
-// transcript, aho's tool-approval cards, and abort. When aho drafts a manifest, the human
-// confirms it here and the console uploads the session log (the provenance) and proposes.
+// The browser talks aho rpc to aho: in a project's workspace (Entry A) or inside a sandbox.
+// Prompts, the live transcript, aho's tool-approval cards, and abort. In a project, when aho
+// drafts a manifest, the human confirms it here and the console uploads the session log (the
+// provenance) and proposes.
 import { useEffect, useReducer, useRef, useState } from "react";
 import type { AnswerOutcome, ApprovalCard as AhoCard, Entry, Event } from "../aho";
-import type { CheckResult, Release, Workspace } from "../gen/api";
+import type { CheckResult, Release, SandboxChat, Workspace } from "../gen/api";
 import type { Draft, Manifest } from "../gen/contract";
-import { api } from "../lib/api";
+import { type AhoTarget, api } from "../lib/api";
 import { draftToValue } from "../lib/draft";
 import { RpcClient, type Status } from "../lib/rpc";
 import { Badge, ErrorBox } from "../ui/common";
@@ -46,7 +47,7 @@ function reduce(view: View, a: ViewAction): View {
 
 const EMPTY: View = { entries: [], streaming: "", cards: [], notices: [] };
 
-function socketUrl(w: Workspace): string {
+function socketUrl(w: Workspace | SandboxChat): string {
   return `${w.rpc_url}${w.rpc_url.includes("?") ? "&" : "?"}token=${encodeURIComponent(w.token)}`;
 }
 
@@ -94,7 +95,8 @@ function CardView({ card, onAnswer }: { card: AhoCard; onAnswer: (outcome: Answe
 }
 
 export interface ChatProps {
-  project: string;
+  /** Where aho runs; only a project's chat can confirm drafts and propose releases. */
+  target: AhoTarget;
   /** The started workspace (its preview URL), once. */
   onWorkspace?: (w: Workspace) => void;
   /** Something may have changed the files: a tool result arrived, or a turn ended. */
@@ -103,8 +105,8 @@ export interface ChatProps {
   onProposed?: (release: Release) => void;
 }
 
-export function Chat({ project, onWorkspace, onActivity, onProposed }: ChatProps) {
-  const [workspace, setWorkspace] = useState<Workspace | null>(null);
+export function Chat({ target, onWorkspace, onActivity, onProposed }: ChatProps) {
+  const [started, setStarted] = useState<Workspace | SandboxChat | null>(null);
   const [status, setStatus] = useState<{ status: Status; detail?: string }>({ status: "connecting" });
   const [view, dispatch] = useReducer(reduce, EMPTY);
   const [error, setError] = useState<unknown>(null);
@@ -117,20 +119,22 @@ export function Chat({ project, onWorkspace, onActivity, onProposed }: ChatProps
   const callbacks = useRef({ onWorkspace, onActivity, onProposed });
   callbacks.current = { onWorkspace, onActivity, onProposed };
 
+  const name = target.kind === "project" ? target.project : target.sandbox;
   useEffect(() => {
     let cancelled = false;
     let rpc: RpcClient | null = null;
+    const start = (sessionId?: string) => (target.kind === "project" ? api.startWorkspace(target.project, sessionId) : api.sandboxChat(target.sandbox, sessionId));
     (async () => {
-      const first = await api.startWorkspace(project);
+      const first = await start();
       if (cancelled) return;
-      setWorkspace(first);
-      callbacks.current.onWorkspace?.(first);
-      let fresh: Workspace | null = first;
+      setStarted(first);
+      if (target.kind === "project") callbacks.current.onWorkspace?.(first as Workspace);
+      let fresh: Workspace | SandboxChat | null = first;
       rpc = new RpcClient({
         // Reconnects resume the same session with a freshly minted socket token; the host
         // remembers the session learned from the first hello_ok, so `null` resumes it too.
         url: async () => {
-          const w: Workspace = fresh ?? (await api.startWorkspace(project, rpc?.hello?.session ?? first.session_id ?? undefined));
+          const w = fresh ?? (await start(rpc?.hello?.session ?? first.session_id ?? undefined));
           fresh = null;
           return socketUrl(w);
         },
@@ -155,7 +159,8 @@ export function Chat({ project, onWorkspace, onActivity, onProposed }: ChatProps
       rpc?.close();
       client.current = null;
     };
-  }, [project]);
+    // `target` is a fresh object every render; its kind and name identify the session.
+  }, [target.kind, name]);
 
   // Keep the newest message in view.
   useEffect(() => {
@@ -183,7 +188,9 @@ export function Chat({ project, onWorkspace, onActivity, onProposed }: ChatProps
   };
 
   const submit = useAction(async (draft: Draft) => {
-    if (workspace === null) throw new Error("the workspace is not started");
+    if (target.kind !== "project") throw new Error("only a project's chat proposes releases");
+    if (started === null) throw new Error("the workspace is not started");
+    const project = target.project;
     const manifest = draftToValue(draft) as unknown as Manifest;
     const result = await api.checkManifest({ manifest, edge_toml: null });
     setCheck(result);
@@ -191,7 +198,7 @@ export function Chat({ project, onWorkspace, onActivity, onProposed }: ChatProps
     // Provenance: the log as received over rpc, in append order; the server verifies its chain.
     const jsonl = view.entries.map((e) => JSON.stringify(e)).join("\n") + "\n";
     // The handshake names the session authoritatively; the workspace may predate it.
-    const sessionId = client.current?.hello?.session ?? workspace.session_id;
+    const sessionId = client.current?.hello?.session ?? started.session_id;
     if (sessionId === null || sessionId === undefined) throw new Error("the session has not started yet");
     const uploaded = await api.uploadSession(project, sessionId, jsonl);
     const release = await api.propose(project, { manifest, edge_toml: null, provenance: { kind: "attested", session_id: uploaded.session_id, head_hash: uploaded.head_hash } });
@@ -215,16 +222,24 @@ export function Chat({ project, onWorkspace, onActivity, onProposed }: ChatProps
       </header>
       <div className="chat-log" ref={log}>
         {view.entries.length === 0 && view.streaming === "" && (
-          <p className="chat-empty muted">Tell aho what to build. It works in this project's workspace; the Code tab shows its files as they change.</p>
+          <p className="chat-empty muted">
+            {target.kind === "project"
+              ? "Tell aho what to build. It works in this project's workspace; the Code tab shows its files as they change."
+              : "Ask aho to build or fix something. It works in this sandbox's /workspace; the Files tab shows its files as they change."}
+          </p>
         )}
         <Transcript
           entries={view.entries}
           streaming={view.streaming}
-          onReviewDraft={(body) => {
-            setCheck(null);
-            submit.clear();
-            setReview(body);
-          }}
+          onReviewDraft={
+            target.kind === "project"
+              ? (body) => {
+                  setCheck(null);
+                  submit.clear();
+                  setReview(body);
+                }
+              : undefined
+          }
         />
         {view.cards.map((c) => (
           <CardView key={c.id} card={c} onAnswer={(o) => answer(c.id, o)} />

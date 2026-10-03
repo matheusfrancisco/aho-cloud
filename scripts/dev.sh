@@ -2,7 +2,7 @@
 # Local aho cloud.
 #
 #   scripts/dev.sh                 # control plane, session host, console
-#   scripts/dev.sh --with-deploy   # + builder, runtime (Docker backend), edge, mail catcher
+#   scripts/dev.sh --with-deploy   # + builder, runtime (Docker backend), edge, mail catcher, sandboxes
 #   scripts/dev.sh --down          # remove the deploy containers (images and volumes stay)
 #
 # Without --with-deploy, builder and runtime are not started, so releases stop at `build failed`;
@@ -13,7 +13,9 @@
 # BuildKit into a local registry, run as containers, and served by the edge on
 # http://<project>.preview.localhost:8443 behind magic-link login (mail lands in the catcher).
 # Containers stand in for microVMs: there is no VM isolation and egress allowlists are not
-# enforced.
+# enforced. The same mode builds the sandbox image (scripts/build-sandbox-image.sh; the first
+# build compiles aho for Linux, a few minutes) and enables sandboxes: VMs (here containers) with
+# aho, reached from the console's Terminal and Chat tabs or `ahocloud ssh`.
 #
 # Env: AHO_CLOUD_DEV_DIR (state, default ./.dev), CP_PORT (8080), SH_PORT (8790), WEB_PORT (5173),
 #      EDGE_PORT (8443), REGISTRY_PORT (5055; macOS AirPlay holds 5000).
@@ -161,11 +163,22 @@ if [[ "$mode" == deploy ]]; then
   builder_url="http://127.0.0.1:$builder_port"
   runtime_url="http://127.0.0.1:$runtime_port"
   preview_url="http://{project}.preview.localhost:$edge_port"
+  echo "building the sandbox image (log: $dev/sandbox-image.log)…"
+  if ! sandbox_image=$(REGISTRY_PORT="$registry_port" BUILDKIT_PROGRESS=plain \
+    "$root/scripts/build-sandbox-image.sh" "localhost:$registry_port/aho-cloud" 2>"$dev/sandbox-image.log"); then
+    tail -n 30 "$dev/sandbox-image.log" >&2
+    exit 1
+  fi
+  # Sandboxes need the runtime: without these flags they answer 503 `sandboxes_disabled`.
+  cp_sandbox=(--sandbox-image "$sandbox_image")
+  sh_sandbox=(--runtime-url "$runtime_url")
 else
   # Nothing listens on port 9: builds and deploys fail fast with a clear error.
   builder_url="http://127.0.0.1:9"
   runtime_url="http://127.0.0.1:9"
   preview_url="http://{project}.preview.localhost"
+  cp_sandbox=()
+  sh_sandbox=()
 fi
 
 pids=()
@@ -189,7 +202,9 @@ trap cleanup EXIT INT TERM
   --runtime-url "$runtime_url" \
   --session-host-url "http://127.0.0.1:$sh_port" \
   --edge-cname edge.localhost \
-  --preview-domain preview.localhost &
+  --preview-domain preview.localhost \
+  --preview-url "$preview_url" \
+  ${cp_sandbox[@]+"${cp_sandbox[@]}"} &
 pids+=($!)
 
 # Workspaces run in aho's host world whatever ~/.aho/config.toml says: the Code tab and "Deploy to
@@ -201,7 +216,8 @@ pids+=($!)
   --public-url "ws://127.0.0.1:$sh_port" \
   --preview-url "$preview_url" \
   --command "$target/debug/ahoc" \
-  --set seams.world=host &
+  --set seams.world=host \
+  ${sh_sandbox[@]+"${sh_sandbox[@]}"} &
 pids+=($!)
 
 if [[ "$mode" == deploy ]]; then
@@ -219,6 +235,7 @@ if [[ "$mode" == deploy ]]; then
     --listen "127.0.0.1:$runtime_port" \
     --state-dir "$dev/runtime" \
     --image-repo "localhost:$registry_port/aho-cloud/{project}" \
+    --pids-max 4096 \
     --reconcile-interval-secs 3 &
   pids+=($!)
 
@@ -246,6 +263,7 @@ echo "session host:   ws://127.0.0.1:$sh_port"
 if [[ "$mode" == deploy ]]; then
   echo "previews:       http://<project>.preview.localhost:$edge_port   (login mail: http://localhost:8025)"
   echo "registry:       localhost:$registry_port   builder :$builder_port   runtime :$runtime_port"
+  echo "sandboxes:      image $sandbox_image   (ahocloud ssh <sandbox>)"
 fi
 echo "state:          $dev   (in-memory control plane: accounts vanish on restart)"
 echo "Ctrl-C stops everything."

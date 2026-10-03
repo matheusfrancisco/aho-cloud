@@ -24,6 +24,8 @@ struct Inner {
     blobs: BTreeMap<(String, String), BlobRec>,
     sessions: BTreeMap<(String, String, String), SessionRec>,
     releases: BTreeMap<(String, String), ReleaseMeta>,
+    sandboxes: BTreeMap<String, SandboxRec>,
+    sandbox_env: BTreeMap<(String, String), EnvVarRec>,
     kv: BTreeMap<String, String>,
 }
 
@@ -212,6 +214,9 @@ impl Store for MemStore {
         if g.projects.contains_key(&project.slug) {
             return Err(StoreError::Conflict(format!("project {}", project.slug)));
         }
+        if g.sandboxes.contains_key(&project.slug) {
+            return Err(StoreError::Conflict(format!("sandbox {}", project.slug)));
+        }
         if !g.orgs.contains_key(&project.org) {
             return Err(StoreError::Backend(format!("unknown org {}", project.org)));
         }
@@ -278,6 +283,67 @@ impl Store for MemStore {
 
     async fn release_meta(&self, project: &str, release: &str) -> Result<Option<ReleaseMeta>, StoreError> {
         Ok(self.lock().releases.get(&key2(project, release)).cloned())
+    }
+
+    async fn create_sandbox(&self, sandbox: &SandboxRec, max_per_org: usize) -> Result<(), StoreError> {
+        let mut g = self.lock();
+        if g.sandboxes.contains_key(&sandbox.slug) {
+            return Err(StoreError::Conflict(format!("sandbox {}", sandbox.slug)));
+        }
+        if g.projects.contains_key(&sandbox.slug) {
+            return Err(StoreError::Conflict(format!("project {}", sandbox.slug)));
+        }
+        if !g.orgs.contains_key(&sandbox.org) || !g.users.contains_key(&sandbox.created_by) {
+            return Err(StoreError::Backend("sandbox references an unknown org or user".into()));
+        }
+        if g.sandboxes.values().filter(|s| s.org == sandbox.org).count() >= max_per_org {
+            return Err(StoreError::Limit(limit_message(&sandbox.org, max_per_org)));
+        }
+        g.sandboxes.insert(sandbox.slug.clone(), sandbox.clone());
+        Ok(())
+    }
+
+    async fn sandbox(&self, slug: &str) -> Result<Option<SandboxRec>, StoreError> {
+        Ok(self.lock().sandboxes.get(slug).cloned())
+    }
+
+    async fn org_sandboxes(&self, org: &str) -> Result<Vec<SandboxRec>, StoreError> {
+        Ok(self.lock().sandboxes.values().filter(|s| s.org == org).cloned().collect())
+    }
+
+    async fn sandboxes(&self) -> Result<Vec<SandboxRec>, StoreError> {
+        Ok(self.lock().sandboxes.values().cloned().collect())
+    }
+
+    async fn update_sandbox(&self, sandbox: &SandboxRec) -> Result<(), StoreError> {
+        if let Some(s) = self.lock().sandboxes.get_mut(&sandbox.slug) {
+            *s = sandbox.clone();
+        }
+        Ok(())
+    }
+
+    async fn delete_sandbox(&self, slug: &str) -> Result<(), StoreError> {
+        let mut g = self.lock();
+        g.sandboxes.remove(slug);
+        g.sandbox_env.retain(|(sandbox, _), _| sandbox != slug);
+        Ok(())
+    }
+
+    async fn put_sandbox_env(&self, var: &EnvVarRec) -> Result<(), StoreError> {
+        let mut g = self.lock();
+        if !g.sandboxes.contains_key(&var.sandbox) {
+            return Err(StoreError::Backend(format!("unknown sandbox {}", var.sandbox)));
+        }
+        g.sandbox_env.insert(key2(&var.sandbox, &var.name), var.clone());
+        Ok(())
+    }
+
+    async fn sandbox_env(&self, sandbox: &str) -> Result<Vec<EnvVarRec>, StoreError> {
+        Ok(self.lock().sandbox_env.values().filter(|v| v.sandbox == sandbox).cloned().collect())
+    }
+
+    async fn delete_sandbox_env(&self, sandbox: &str, name: &str) -> Result<bool, StoreError> {
+        Ok(self.lock().sandbox_env.remove(&key2(sandbox, name)).is_some())
     }
 
     async fn kv_get(&self, key: &str) -> Result<Option<String>, StoreError> {

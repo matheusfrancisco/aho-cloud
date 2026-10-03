@@ -145,7 +145,7 @@ function ProjectView({ p, pollMs }: { p: string; pollMs: number }) {
 
       <div className="project-split">
         <Chat
-          project={p}
+          target={{ kind: "project", project: p }}
           onWorkspace={(w) => {
             setWorkspace(w);
             rememberPreview(p, w.preview_url);
@@ -163,7 +163,7 @@ function ProjectView({ p, pollMs }: { p: string; pollMs: number }) {
           </div>
           <div className="tab-panel" role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`}>
             {/* The files live in the workspace the chat starts; listing them before it exists would 404. */}
-            {tab === "code" && (workspace === null ? <Loading what="the workspace" /> : <CodePanel project={p} refreshKey={codeTick} />)}
+            {tab === "code" && (workspace === null ? <Loading what="the workspace" /> : <CodePanel target={{ kind: "project", project: p }} refreshKey={codeTick} />)}
             {tab === "releases" && <ReleasesPanel project={project} releases={releases} tracked={tracked} previewUrl={preview} />}
             {tab === "domains" && <DomainsPanel project={p} domains={project.domains} onChanged={reload} />}
             {tab === "secrets" && (

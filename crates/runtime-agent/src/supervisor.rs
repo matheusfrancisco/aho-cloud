@@ -1,18 +1,25 @@
-//! Desired state per (project, stage) and the loop that makes it true: boot missing replicas,
-//! replace ones from an old release (or with rotated secrets), stop extras, restart crashed or
-//! persistently unhealthy ones, and report [`DeploymentStatus`].
+//! Desired state per (project, stage) and per sandbox, and the loop that makes it true.
+//!
+//! Deployments: boot missing replicas, replace ones from an old release (or with rotated
+//! secrets), stop extras, restart crashed or persistently unhealthy ones, and report
+//! [`DeploymentStatus`]. Sandboxes: one VM each, wanted running or stopped, replaced when its
+//! spec changes (its workspace disk is kept), rebooted when it dies, and its disk destroyed
+//! when the sandbox is removed; reported as [`SandboxStatus`]. Both share the address
+//! allocator and the egress policies.
 //!
 //! API calls only record intent and return at once; [`Supervisor::reconcile`] (driven by
 //! [`Supervisor::run`]) does the work, so a slow image pull never blocks the API.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use cloud_api::internal::{Deployment, DeploymentStatus, ProcessStatus, RunState};
+use cloud_api::SandboxState;
+use cloud_api::internal::{Deployment, DeploymentStatus, ProcessStatus, RunState, SANDBOX_WORKSPACE, SandboxSpec, SandboxStatus};
 use cloud_contract::ledger::Stage;
 use cloud_contract::manifest::{Health, Process};
+use cloud_contract::validate::is_project_slug;
 use futures::future::join_all;
 use parking_lot::Mutex;
 use tokio::sync::Notify;
@@ -21,7 +28,7 @@ use crate::egress::{EgressPolicies, GuestPolicy};
 use crate::guest::{GuestConfig, ImageConfig, VOLUME_DEVICE, VolumeMount};
 use crate::health;
 use crate::net::{Allocator, Lease};
-use crate::vmm::{ReplicaSpec, Vmm, VolumeSpec};
+use crate::vmm::{DiskId, GuestConn, ReplicaSpec, Vmm, VolumeSpec, labels};
 
 #[derive(Clone, Debug)]
 pub struct SupervisorConfig {
@@ -34,6 +41,9 @@ pub struct SupervisorConfig {
     pub unhealthy_threshold: u32,
     /// After boot, failed checks do not count until the replica was healthy once or this passed.
     pub startup_grace: Duration,
+    /// Consecutive boot failures (or deaths) after which a sandbox reports `failed`; it is
+    /// still retried.
+    pub sandbox_failures: u32,
 }
 
 impl Default for SupervisorConfig {
@@ -44,6 +54,7 @@ impl Default for SupervisorConfig {
             health_timeout: Duration::from_secs(2),
             unhealthy_threshold: 3,
             startup_grace: Duration::from_secs(60),
+            sandbox_failures: 3,
         }
     }
 }
@@ -58,6 +69,13 @@ pub enum SupervisorError {
     TooManyReplicas { max: u16 },
     #[error("{0}")]
     Invalid(String),
+    #[error("no sandbox `{0}`")]
+    NoSandbox(String),
+    #[error("sandbox `{0}` is not running")]
+    NotRunning(String),
+    /// The VM backend failed (e.g. opening an exec stream).
+    #[error("{0}")]
+    Backend(String),
 }
 
 type Key = (String, Stage);
@@ -111,7 +129,36 @@ impl Entry {
 
 struct State {
     entries: BTreeMap<Key, Entry>,
+    sandboxes: BTreeMap<String, SandboxEntry>,
+    /// Slugs whose workspace disk must be destroyed before anything boots from it again.
+    wipes: BTreeSet<String>,
     allocator: Allocator,
+}
+
+/// One sandbox: what is wanted, and its VM.
+struct SandboxEntry {
+    spec: SandboxSpec,
+    generation: String,
+    /// Wanted running (`put_sandbox`) rather than stopped (`stop_sandbox`).
+    running: bool,
+    /// Deleted: stop, destroy the disk, forget.
+    removed: bool,
+    vm: Option<SandboxVm>,
+    /// Consecutive boot failures and deaths; cleared once a VM is seen running after its boot.
+    failures: u32,
+    error: Option<String>,
+}
+
+struct SandboxVm {
+    id: String,
+    lease: Lease,
+    /// Fingerprint of the spec it was booted from.
+    generation: String,
+    port: Option<u16>,
+    /// Set once `Vmm::start` returned.
+    booted: bool,
+    /// Seen running by a pass after the one that booted it.
+    proven: bool,
 }
 
 struct Inner<V> {
@@ -140,9 +187,34 @@ fn generation(d: &Deployment) -> String {
     blake3::hash(doc.to_string().as_bytes()).to_hex().to_string()
 }
 
+/// What a sandbox VM is started from; any change replaces it.
+fn sandbox_generation(s: &SandboxSpec) -> String {
+    blake3::hash(serde_json::json!(s).to_string().as_bytes()).to_hex().to_string()
+}
+
+/// The sandbox's VM while it counts as running: wanted, booted from the current spec, and its
+/// disk not waiting to be destroyed.
+fn running_vm(e: &SandboxEntry, wiping: bool) -> Option<&SandboxVm> {
+    e.vm.as_ref().filter(|vm| e.running && !wiping && vm.booted && vm.generation == e.generation)
+}
+
 fn new_id() -> String {
     let id = uuid::Uuid::new_v4().simple().to_string();
     format!("vm-{}", &id[..12])
+}
+
+/// `PORT` and the egress proxy, over whatever `env` holds.
+fn platform_env(env: &mut BTreeMap<String, String>, port: Option<u16>, lease: &Lease, proxy_port: u16) {
+    if let Some(port) = port {
+        env.insert("PORT".to_owned(), port.to_string());
+    }
+    let proxy = format!("http://{}:{proxy_port}", lease.gateway);
+    for key in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"] {
+        env.insert(key.to_owned(), proxy.clone());
+    }
+    for key in ["NO_PROXY", "no_proxy"] {
+        env.insert(key.to_owned(), "localhost,127.0.0.1,::1".to_owned());
+    }
 }
 
 /// The config drive for one replica (the backend adds the image's own config).
@@ -153,24 +225,30 @@ pub fn guest_config(d: &Deployment, process: &Process, lease: &Lease, proxy_port
             env.insert(secret.name.clone(), value.clone());
         }
     }
-    if let Some(port) = process.port {
-        env.insert("PORT".to_owned(), port.to_string());
-    }
-    let proxy = format!("http://{}:{proxy_port}", lease.gateway);
-    for key in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"] {
-        env.insert(key.to_owned(), proxy.clone());
-    }
-    for key in ["NO_PROXY", "no_proxy"] {
-        env.insert(key.to_owned(), "localhost,127.0.0.1,::1".to_owned());
-    }
+    platform_env(&mut env, process.port, lease, proxy_port);
     GuestConfig {
         process: process.name.clone(),
         command: process.command.clone(),
         image: ImageConfig::default(),
         env,
         port: process.port,
-        health: process.health.clone(),
         volume: process.volume.as_ref().map(|v| VolumeMount { device: VOLUME_DEVICE.to_owned(), mount: v.mount.clone() }),
+        dns: vec![lease.gateway],
+    }
+}
+
+/// The config drive of a sandbox VM: the sandbox's environment under the platform's, its
+/// workspace disk at [`SANDBOX_WORKSPACE`], and the image's own (idle) command.
+pub fn sandbox_guest_config(s: &SandboxSpec, lease: &Lease, proxy_port: u16) -> GuestConfig {
+    let mut env = s.env.clone();
+    platform_env(&mut env, s.port, lease, proxy_port);
+    GuestConfig {
+        process: "sandbox".to_owned(),
+        command: None,
+        image: ImageConfig::default(),
+        env,
+        port: s.port,
+        volume: Some(VolumeMount { device: VOLUME_DEVICE.to_owned(), mount: SANDBOX_WORKSPACE.to_owned() }),
         dns: vec![lease.gateway],
     }
 }
@@ -204,7 +282,7 @@ impl<V: Vmm> Supervisor<V> {
                 vmm,
                 cfg,
                 egress,
-                state: Mutex::new(State { entries: BTreeMap::new(), allocator }),
+                state: Mutex::new(State { entries: BTreeMap::new(), sandboxes: BTreeMap::new(), wipes: BTreeSet::new(), allocator }),
                 kick: Notify::new(),
                 pass: tokio::sync::Mutex::new(()),
             }),
@@ -380,6 +458,125 @@ impl<V: Vmm> Supervisor<V> {
         .map(drop)
     }
 
+    fn sandbox_status_of(&self, slug: &str, e: &SandboxEntry, wiping: bool) -> SandboxStatus {
+        let running = running_vm(e, wiping);
+        let failed = e.running && running.is_none() && e.failures >= self.inner.cfg.sandbox_failures.max(1);
+        let state = match (e.running, running, failed) {
+            (false, ..) => SandboxState::Stopped,
+            (true, Some(_), _) => SandboxState::Running,
+            (true, None, true) => SandboxState::Failed,
+            (true, None, false) => SandboxState::Starting,
+        };
+        SandboxStatus {
+            slug: slug.to_owned(),
+            state,
+            address: running.and_then(|vm| vm.port.map(|port| self.inner.vmm.endpoint(&vm.id, vm.lease.ip, port).to_string())),
+            error: if failed { e.error.clone() } else { None },
+        }
+    }
+
+    fn with_sandbox<T>(&self, slug: &str, f: impl FnOnce(&mut SandboxEntry) -> T) -> Result<(T, SandboxStatus), SupervisorError> {
+        let mut state = self.inner.state.lock();
+        let State { sandboxes, wipes, .. } = &mut *state;
+        let entry = sandboxes.get_mut(slug).filter(|e| !e.removed).ok_or_else(|| SupervisorError::NoSandbox(slug.to_owned()))?;
+        let out = f(entry);
+        let status = self.sandbox_status_of(slug, entry, wipes.contains(slug));
+        drop(state);
+        self.inner.kick.notify_one();
+        Ok((out, status))
+    }
+
+    /// Wants sandbox `spec.slug` running with `spec`: boots it, or replaces a VM booted from a
+    /// different spec (the workspace disk is kept). Lifts a stop and clears earlier failures.
+    pub fn put_sandbox(&self, spec: SandboxSpec) -> Result<SandboxStatus, SupervisorError> {
+        if !is_project_slug(&spec.slug) {
+            return Err(SupervisorError::Invalid(format!("`{}` is not a sandbox slug", spec.slug)));
+        }
+        let slug = spec.slug.clone();
+        let generation = sandbox_generation(&spec);
+        let mut state = self.inner.state.lock();
+        let State { sandboxes, wipes, .. } = &mut *state;
+        let entry = sandboxes.entry(slug.clone()).or_insert_with(|| SandboxEntry {
+            spec: spec.clone(),
+            generation: String::new(),
+            running: true,
+            removed: false,
+            vm: None,
+            failures: 0,
+            error: None,
+        });
+        entry.spec = spec;
+        entry.generation = generation;
+        entry.running = true;
+        entry.removed = false;
+        entry.failures = 0;
+        entry.error = None;
+        let status = self.sandbox_status_of(&slug, entry, wipes.contains(&slug));
+        drop(state);
+        self.inner.kick.notify_one();
+        Ok(status)
+    }
+
+    /// Stops the sandbox's VM until the next [`Supervisor::put_sandbox`]; the disk is kept.
+    pub fn stop_sandbox(&self, slug: &str) -> Result<SandboxStatus, SupervisorError> {
+        self.with_sandbox(slug, |e| {
+            e.running = false;
+            e.failures = 0;
+            e.error = None;
+        })
+        .map(|((), s)| s)
+    }
+
+    /// Stops the sandbox's VM, destroys its disk and forgets it. A slug this agent does not
+    /// know still has its disk destroyed (it may predate a restart); either way nothing boots
+    /// from that slug's disk before it is gone.
+    pub fn remove_sandbox(&self, slug: &str) -> Result<(), SupervisorError> {
+        if !is_project_slug(slug) {
+            return Err(SupervisorError::Invalid(format!("`{slug}` is not a sandbox slug")));
+        }
+        let mut state = self.inner.state.lock();
+        if let Some(e) = state.sandboxes.get_mut(slug) {
+            e.removed = true;
+            e.running = false;
+        }
+        state.wipes.insert(slug.to_owned());
+        drop(state);
+        self.inner.kick.notify_one();
+        Ok(())
+    }
+
+    pub fn sandbox_status(&self, slug: &str) -> Result<SandboxStatus, SupervisorError> {
+        let state = self.inner.state.lock();
+        state
+            .sandboxes
+            .get(slug)
+            .filter(|e| !e.removed)
+            .map(|e| self.sandbox_status_of(slug, e, state.wipes.contains(slug)))
+            .ok_or_else(|| SupervisorError::NoSandbox(slug.to_owned()))
+    }
+
+    /// Where the host reaches the running sandbox's `port`, when it has one.
+    pub fn sandbox_address(&self, slug: &str) -> Result<Option<SocketAddr>, SupervisorError> {
+        let state = self.inner.state.lock();
+        let e = state.sandboxes.get(slug).filter(|e| !e.removed).ok_or_else(|| SupervisorError::NoSandbox(slug.to_owned()))?;
+        Ok(running_vm(e, state.wipes.contains(slug)).and_then(|vm| vm.port.map(|port| self.inner.vmm.endpoint(&vm.id, vm.lease.ip, port))))
+    }
+
+    /// A fresh exec stream into the running sandbox (see [`crate::guest::exec`]).
+    pub async fn sandbox_exec(&self, slug: &str) -> Result<GuestConn, SupervisorError> {
+        let id = {
+            let state = self.inner.state.lock();
+            let e = state.sandboxes.get(slug).filter(|e| !e.removed).ok_or_else(|| SupervisorError::NoSandbox(slug.to_owned()))?;
+            running_vm(e, state.wipes.contains(slug)).ok_or_else(|| SupervisorError::NotRunning(slug.to_owned()))?.id.clone()
+        };
+        self.inner.vmm.exec(&id).await.map_err(|e| SupervisorError::Backend(e.to_string()))
+    }
+
+    /// Path of `cloud-guest` inside sandboxes, for exec sessions that run it.
+    pub fn guest_program(&self) -> &str {
+        self.inner.vmm.guest_program()
+    }
+
     /// Reconciles until the task is dropped: after every change, and every `interval`.
     pub async fn run(&self, interval: Duration) {
         loop {
@@ -391,11 +588,168 @@ impl<V: Vmm> Supervisor<V> {
         }
     }
 
-    /// One pass over every deployment (concurrently); passes never overlap.
+    /// One pass over every deployment and sandbox (concurrently); passes never overlap.
     pub async fn reconcile(&self) {
         let _pass = self.inner.pass.lock().await;
-        let keys: Vec<Key> = self.inner.state.lock().entries.keys().cloned().collect();
-        join_all(keys.iter().map(|k| self.reconcile_one(k))).await;
+        let (keys, slugs) = {
+            let state = self.inner.state.lock();
+            let keys: Vec<Key> = state.entries.keys().cloned().collect();
+            let slugs: BTreeSet<String> = state.sandboxes.keys().chain(&state.wipes).cloned().collect();
+            (keys, slugs)
+        };
+        futures::join!(join_all(keys.iter().map(|k| self.reconcile_one(k))), join_all(slugs.iter().map(|s| self.reconcile_sandbox(s))));
+    }
+
+    async fn reconcile_sandbox(&self, slug: &str) {
+        let (vm, wanted, wiping) = {
+            let state = self.inner.state.lock();
+            let entry = state.sandboxes.get(slug);
+            let vm = entry.and_then(|e| e.vm.as_ref().map(|vm| (vm.id.clone(), vm.lease.ip, vm.generation == e.generation, vm.proven)));
+            (vm, entry.is_some_and(|e| e.running && !e.removed), state.wipes.contains(slug))
+        };
+        if let Some((id, ip, current, proven)) = vm {
+            // Passes never overlap, so a VM seen here has finished booting.
+            let alive = self.inner.vmm.running(&id).await;
+            if alive && current && wanted && !wiping {
+                if !proven {
+                    self.update_sandbox(slug, |e| {
+                        if let Some(vm) = &mut e.vm {
+                            vm.proven = true;
+                        }
+                        e.failures = 0;
+                        e.error = None;
+                    });
+                }
+                return;
+            }
+            if !alive && current && wanted {
+                tracing::warn!(slug, %id, "sandbox VM is not running; rebooting it");
+                self.update_sandbox(slug, |e| {
+                    e.failures += 1;
+                    e.error = Some("the VM stopped unexpectedly".to_owned());
+                });
+            }
+            if !self.stop_sandbox_vm(slug, &id, ip).await {
+                return;
+            }
+        }
+        if wiping {
+            match self.inner.vmm.destroy_volume(&DiskId::Sandbox(slug.to_owned())).await {
+                Ok(()) => {
+                    self.inner.state.lock().wipes.remove(slug);
+                    tracing::info!(slug, "sandbox disk destroyed");
+                }
+                Err(e) => {
+                    tracing::warn!(slug, error = %e, "destroying the sandbox disk failed; will retry");
+                    return;
+                }
+            }
+        }
+        {
+            let mut state = self.inner.state.lock();
+            let State { sandboxes, wipes, .. } = &mut *state;
+            if sandboxes.get(slug).is_some_and(|e| e.removed && e.vm.is_none()) && !wipes.contains(slug) {
+                sandboxes.remove(slug);
+                return;
+            }
+        }
+        self.start_sandbox_vm(slug).await;
+    }
+
+    fn update_sandbox(&self, slug: &str, f: impl FnOnce(&mut SandboxEntry)) {
+        if let Some(e) = self.inner.state.lock().sandboxes.get_mut(slug) {
+            f(e);
+        }
+    }
+
+    /// Whether the VM is gone (its address and egress policy released).
+    async fn stop_sandbox_vm(&self, slug: &str, id: &str, ip: Ipv4Addr) -> bool {
+        if let Err(e) = self.inner.vmm.stop(id).await {
+            tracing::warn!(slug, id, error = %e, "stopping sandbox VM failed; will retry");
+            return false;
+        }
+        let mut state = self.inner.state.lock();
+        let State { sandboxes, allocator, .. } = &mut *state;
+        if let Some(e) = sandboxes.get_mut(slug)
+            && e.vm.as_ref().is_some_and(|vm| vm.id == id)
+        {
+            e.vm = None;
+            allocator.release(ip);
+        }
+        self.inner.egress.remove(IpAddr::V4(ip));
+        tracing::info!(slug, id, "sandbox VM stopped");
+        true
+    }
+
+    /// Boots the sandbox's VM when it is wanted, has none and its disk is not being destroyed.
+    async fn start_sandbox_vm(&self, slug: &str) {
+        let spec = {
+            let mut state = self.inner.state.lock();
+            let State { sandboxes, wipes, allocator, .. } = &mut *state;
+            let Some(e) = sandboxes.get_mut(slug) else {
+                return;
+            };
+            if !e.running || e.removed || e.vm.is_some() || wipes.contains(slug) {
+                return;
+            }
+            let lease = match allocator.allocate() {
+                Ok(lease) => lease,
+                Err(err) => {
+                    tracing::warn!(slug, error = %err, "no address for sandbox");
+                    e.failures += 1;
+                    e.error = Some(err.to_string());
+                    return;
+                }
+            };
+            let s = &e.spec;
+            let spec = ReplicaSpec {
+                id: new_id(),
+                repo: s.image_repo.clone(),
+                image_digest: s.image_digest.clone(),
+                hostname: s.slug.clone(),
+                labels: vec![(labels::SANDBOX.to_owned(), s.slug.clone())],
+                guest: sandbox_guest_config(s, &lease, self.inner.cfg.proxy_port),
+                volume: Some(VolumeSpec { disk: DiskId::Sandbox(s.slug.clone()), size_mb: s.disk_mib }),
+                cpus: Some(s.cpus),
+                mem_mib: Some(s.mem_mib),
+                lease: lease.clone(),
+            };
+            self.inner.egress.set(IpAddr::V4(lease.ip), GuestPolicy { owner: format!("sandbox {slug}"), allow: s.egress.clone() });
+            e.vm = Some(SandboxVm {
+                id: spec.id.clone(),
+                lease,
+                generation: e.generation.clone(),
+                port: s.port,
+                booted: false,
+                proven: false,
+            });
+            spec
+        };
+        let (id, ip) = (spec.id.clone(), spec.lease.ip);
+        let result = self.inner.vmm.start(spec).await;
+        let mut state = self.inner.state.lock();
+        let State { sandboxes, allocator, .. } = &mut *state;
+        let entry = sandboxes.get_mut(slug);
+        match result {
+            Ok(_) => {
+                if let Some(vm) = entry.and_then(|e| e.vm.as_mut()).filter(|vm| vm.id == id) {
+                    vm.booted = true;
+                }
+                tracing::info!(slug, %id, "sandbox VM booted");
+            }
+            Err(err) => {
+                tracing::warn!(slug, %id, error = %err, "sandbox VM failed to start");
+                if let Some(e) = entry {
+                    if e.vm.as_ref().is_some_and(|vm| vm.id == id) {
+                        e.vm = None;
+                    }
+                    e.failures += 1;
+                    e.error = Some(err.to_string());
+                }
+                allocator.release(ip);
+                self.inner.egress.remove(IpAddr::V4(ip));
+            }
+        }
     }
 
     async fn reconcile_one(&self, key: &Key) {
@@ -494,7 +848,7 @@ impl<V: Vmm> Supervisor<V> {
         match self.inner.vmm.stop(id).await {
             Ok(()) => {
                 let mut state = self.inner.state.lock();
-                let State { entries, allocator } = &mut *state;
+                let State { entries, allocator, .. } = &mut *state;
                 if let Some(entry) = entries.get_mut(key)
                     && let Some(pos) = entry.replicas.iter().position(|r| r.id == id)
                 {
@@ -511,7 +865,7 @@ impl<V: Vmm> Supervisor<V> {
     async fn start_replica(&self, key: &Key, process: &str, index: u16) {
         let spec = {
             let mut state = self.inner.state.lock();
-            let State { entries, allocator } = &mut *state;
+            let State { entries, allocator, .. } = &mut *state;
             let Some(entry) = entries.get_mut(key) else {
                 return;
             };
@@ -529,19 +883,30 @@ impl<V: Vmm> Supervisor<V> {
             };
             let spec = ReplicaSpec {
                 id: new_id(),
-                project: d.project.clone(),
-                stage: d.stage,
-                process: p.name.clone(),
-                index,
-                release: d.release.clone(),
+                repo: d.project.clone(),
                 image_digest: d.image_digest.clone(),
+                hostname: format!("{}-{index}", p.name),
+                labels: [
+                    (labels::PROJECT, d.project.clone()),
+                    (labels::STAGE, d.stage.as_str().to_owned()),
+                    (labels::PROCESS, p.name.clone()),
+                    (labels::INDEX, index.to_string()),
+                    (labels::RELEASE, d.release.clone()),
+                ]
+                .into_iter()
+                .map(|(k, v)| (k.to_owned(), v))
+                .collect(),
                 guest: guest_config(d, p, &lease, self.inner.cfg.proxy_port),
-                volume: p.volume.as_ref().map(|v| VolumeSpec { size_mb: v.size_mb }),
+                volume: p.volume.as_ref().map(|v| VolumeSpec {
+                    disk: DiskId::Process { project: d.project.clone(), stage: d.stage, process: p.name.clone(), index },
+                    size_mb: v.size_mb,
+                }),
+                cpus: None,
+                mem_mib: None,
                 lease: lease.clone(),
             };
-            self.inner
-                .egress
-                .set(IpAddr::V4(lease.ip), GuestPolicy { project: d.project.clone(), stage: d.stage, allow: d.manifest.egress.clone() });
+            let owner = format!("{}/{}", d.project, d.stage.as_str());
+            self.inner.egress.set(IpAddr::V4(lease.ip), GuestPolicy { owner, allow: d.manifest.egress.clone() });
             entry.replicas.push(Replica {
                 id: spec.id.clone(),
                 process: p.name.clone(),
@@ -563,7 +928,7 @@ impl<V: Vmm> Supervisor<V> {
         let ip = spec.lease.ip;
         let result = self.inner.vmm.start(spec).await;
         let mut state = self.inner.state.lock();
-        let State { entries, allocator } = &mut *state;
+        let State { entries, allocator, .. } = &mut *state;
         let entry = entries.get_mut(key);
         match result {
             Ok(_) => {

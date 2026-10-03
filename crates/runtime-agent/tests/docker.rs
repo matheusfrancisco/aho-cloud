@@ -1,5 +1,6 @@
 //! The Docker backend against a fake `docker` CLI (a shell script that records its arguments and
-//! answers like the daemon), alone and under the supervisor.
+//! answers like the daemon; `docker exec -i` runs the real `cloud-guest exec`), alone and under
+//! the supervisor.
 #![cfg(unix)]
 // Helpers outside `#[test]` fns are test code too.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -11,15 +12,16 @@ use std::net::Ipv4Addr;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+use cloud_api::exec::ExecRequest;
 use cloud_api::internal::RunState;
 use cloud_contract::ledger::Stage;
-use cloud_contract::manifest::Health;
 use cloud_runtime::docker::{Docker, DockerConfig, MANAGED_LABEL};
 use cloud_runtime::egress::EgressPolicies;
 use cloud_runtime::guest::control::Client;
+use cloud_runtime::guest::exec::{collect, read_frame, write_frame};
 use cloud_runtime::guest::{GuestConfig, ImageConfig, VolumeMount};
 use cloud_runtime::net::Allocator;
-use cloud_runtime::vmm::{ReplicaSpec, Vmm, VmmError, VolumeSpec};
+use cloud_runtime::vmm::{DiskId, ReplicaSpec, Vmm, VmmError, VolumeSpec};
 use cloud_runtime::{Supervisor, SupervisorConfig};
 use common::{DIGEST_1, deployment};
 
@@ -27,9 +29,10 @@ const DIGEST: &str = "sha256:555555555555555555555555555555555555555555555555555
 
 /// A fake `docker` in a temp dir. Every call appends its argv (joined by `\x1f`) to `docker.log`.
 /// Answers: `run` prints `cid-<name>`; `port` prints `127.0.0.1:<log/port>` and an IPv6 line;
-/// `inspect` prints `log/running` (default `true`); `exec` exits with `log/exec_code` (default
-/// 0); `rm` of a name containing `missing` fails like the daemon; `ps` prints `log/ps`;
-/// `pull` fails when `log/pull_fails` exists.
+/// `inspect` prints `log/running` (default `true`); `exec -i` runs `cloud-guest exec` (this
+/// build's), other `exec`s exit with `log/exec_code` (default 0); `rm` of a name containing
+/// `missing` fails like the daemon, `volume rm` likewise; `ps` prints `log/ps`; `pull` fails
+/// when `log/pull_fails` exists.
 struct Host {
     _tmp: tempfile::TempDir,
     root: PathBuf,
@@ -44,6 +47,7 @@ impl Host {
         let script = format!(
             r#"#!/bin/sh
 log={log}
+guest={guest}
 (for a in "$@"; do printf '%s\037' "$a"; done; echo) >> "$log/docker.log"
 case "$1" in
   pull) [ -e "$log/pull_fails" ] && {{ echo "manifest unknown" >&2; exit 1; }}; exit 0 ;;
@@ -52,13 +56,15 @@ case "$1" in
     echo "cid-$name" ;;
   port) echo "127.0.0.1:$(cat "$log/port" 2>/dev/null || echo 49153)"; echo "[::]:49153" ;;
   inspect) cat "$log/running" 2>/dev/null || echo true ;;
-  exec) exit "$(cat "$log/exec_code" 2>/dev/null || echo 0)" ;;
+  exec) [ "$2" = -i ] && exec "$guest" exec; exit "$(cat "$log/exec_code" 2>/dev/null || echo 0)" ;;
   rm) case "$3" in *missing*) echo "Error response from daemon: No such container: $3" >&2; exit 1 ;; esac ;;
+  volume) case "$3" in *missing*) echo "Error response from daemon: get $3: no such volume" >&2; exit 1 ;; esac ;;
   ps) cat "$log/ps" 2>/dev/null || true ;;
   restart) ;;
 esac
 "#,
-            log = log.display()
+            log = log.display(),
+            guest = env!("CARGO_BIN_EXE_cloud-guest"),
         );
         let bin = root.join("docker");
         std::fs::write(&bin, script).unwrap();
@@ -111,25 +117,29 @@ fn spec(id: &str, command: Option<Vec<String>>, volume: bool) -> ReplicaSpec {
         ("NO_PROXY".to_owned(), "localhost".to_owned()),
     ]);
     env.insert("GREETING".into(), "a=b c".into());
+    let labels =
+        [("aho-cloud.project", "acme-shop"), ("aho-cloud.stage", "preview"), ("aho-cloud.process", "web"), ("aho-cloud.release", "r1")];
     ReplicaSpec {
         id: id.into(),
-        project: "acme-shop".into(),
-        stage: Stage::Preview,
-        process: "web".into(),
-        index: 0,
-        release: "r1".into(),
+        repo: "acme-shop".into(),
         image_digest: DIGEST.into(),
+        hostname: "web-0".into(),
+        labels: labels.iter().map(|(k, v)| ((*k).to_owned(), (*v).to_owned())).collect(),
         guest: GuestConfig {
             process: "web".into(),
             command,
             image: ImageConfig::default(),
             env,
             port: Some(8080),
-            health: Health::Http { path: "/healthz".into(), port: None },
             volume: volume.then(|| VolumeMount { device: "/dev/vdc".into(), mount: "/data".into() }),
             dns: vec![lease.gateway],
         },
-        volume: volume.then_some(VolumeSpec { size_mb: 256 }),
+        volume: volume.then(|| VolumeSpec {
+            disk: DiskId::Process { project: "acme-shop".into(), stage: Stage::Preview, process: "web".into(), index: 0 },
+            size_mb: 256,
+        }),
+        cpus: None,
+        mem_mib: None,
         lease,
     }
 }
@@ -278,6 +288,7 @@ async fn the_supervisor_reports_published_ports_as_replica_addresses() {
         health_timeout: std::time::Duration::from_millis(500),
         unhealthy_threshold: 1,
         startup_grace: std::time::Duration::ZERO,
+        sandbox_failures: 3,
     };
     let sup = Supervisor::new(docker, Allocator::new("10.77.0.0/24".parse().unwrap()).unwrap(), EgressPolicies::default(), cfg);
     sup.apply(deployment("r1", DIGEST_1)).unwrap();
@@ -291,4 +302,77 @@ async fn the_supervisor_reports_published_ports_as_replica_addresses() {
     // The worker's command health check went through `docker exec`.
     let exec = host.calls_to("exec");
     assert!(exec.iter().any(|c| c.ends_with(&["python".into(), "-m".into(), "worker".into(), "--check".into()])), "{exec:?}");
+}
+
+#[tokio::test]
+async fn a_sandbox_replica_runs_its_repo_with_its_own_volume_and_resources() {
+    let host = Host::new();
+    let docker = host.backend();
+    docker.prepare().await.unwrap();
+    let mut s = spec("vm-sbx01", None, false);
+    s.repo = "aho.sandbox".into();
+    s.hostname = "dev-box".into();
+    s.labels = vec![("aho-cloud.sandbox".into(), "dev-box".into())];
+    s.guest.port = Some(3000);
+    s.guest.volume = Some(VolumeMount { device: "/dev/vdc".into(), mount: "/workspace".into() });
+    s.volume = Some(VolumeSpec { disk: DiskId::Sandbox("dev-box".into()), size_mb: 10240 });
+    (s.cpus, s.mem_mib) = (Some(2), Some(2048));
+    docker.start(s).await.unwrap();
+
+    let image = format!("localhost:5055/aho-cloud/aho.sandbox@{DIGEST}");
+    assert_eq!(host.calls_to("pull"), [vec!["pull".to_owned(), "-q".to_owned(), image.clone()]]);
+    let run = &host.calls_to("run")[0];
+    let joined = run.join(" ");
+    for part in [
+        "--name vm-sbx01 --hostname dev-box".to_owned(),
+        format!("--label {MANAGED_LABEL}=1 --label aho-cloud.sandbox=dev-box --env-file"),
+        "--memory 2048m --cpus 2 --pids-limit 64".to_owned(),
+        "-p 127.0.0.1::3000".to_owned(),
+        "-v aho-cloud-sandbox.dev-box:/workspace".to_owned(),
+    ] {
+        assert!(joined.contains(&part), "missing `{part}` in {joined}");
+    }
+    assert!(!joined.contains("aho-cloud.project"), "{joined}");
+    assert_eq!(run.last().unwrap(), &image, "the image's own idle command runs");
+}
+
+#[tokio::test]
+async fn exec_streams_run_cloud_guest_exec_in_the_container() {
+    let host = Host::new();
+    let docker = host.backend();
+    let sh = |s: &str| ExecRequest { argv: vec!["sh".into(), "-c".into(), s.into()], pty: None, env: BTreeMap::new(), cwd: None };
+    let out = collect(docker.exec("vm-x").await.unwrap(), sh("echo out; echo err >&2; exit 3"), 1024).await.unwrap();
+    assert_eq!((out.code, out.stdout.as_slice(), out.stderr.as_slice()), (3, &b"out\n"[..], &b"err\n"[..]));
+    assert_eq!(host.calls_to("exec")[0], ["exec", "-i", "vm-x", "/usr/local/bin/cloud-guest", "exec"]);
+
+    // Dropping the stream ends the session inside the container.
+    let pid_file = host.root.join("log/session.pid");
+    let mut conn = docker.exec("vm-x").await.unwrap();
+    let script = format!("echo $$ > '{}'; echo ready; exec sleep 30", pid_file.display());
+    write_frame(&mut conn, &cloud_api::exec::Frame::Request(sh(&script))).await.unwrap();
+    assert_eq!(read_frame(&mut conn).await.unwrap(), Some(cloud_api::exec::Frame::Stdout(b"ready\n".to_vec())));
+    let pid: i32 = std::fs::read_to_string(&pid_file).unwrap().trim().parse().unwrap();
+    drop(conn);
+    let gone = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        while nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_ok() {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+    assert!(gone.is_ok(), "the session outlived its stream");
+}
+
+#[tokio::test]
+async fn destroying_a_volume_removes_it_and_tolerates_missing_ones() {
+    let host = Host::new();
+    let docker = host.backend();
+    docker.destroy_volume(&DiskId::Sandbox("dev-box".into())).await.unwrap();
+    docker.destroy_volume(&DiskId::Sandbox("missing-box".into())).await.unwrap();
+    let disk = DiskId::Process { project: "acme-shop".into(), stage: Stage::Live, process: "worker".into(), index: 0 };
+    docker.destroy_volume(&disk).await.unwrap();
+    let rm: Vec<String> = host.calls_to("volume").into_iter().map(|c| c.join(" ")).collect();
+    assert_eq!(
+        rm,
+        ["volume rm aho-cloud-sandbox.dev-box", "volume rm aho-cloud-sandbox.missing-box", "volume rm aho-cloud-acme-shop-live-worker-0"]
+    );
 }

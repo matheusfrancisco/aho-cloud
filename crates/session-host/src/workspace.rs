@@ -32,7 +32,7 @@ pub fn is_session_id(s: &str) -> bool {
     (1..=32).contains(&s.len()) && s.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
 }
 
-fn is_user_id(s: &str) -> bool {
+pub(crate) fn is_user_id(s: &str) -> bool {
     !s.is_empty() && s.len() <= USER_MAX && !s.chars().any(char::is_control)
 }
 
@@ -92,7 +92,7 @@ pub struct Workspace {
     pub user_id: String,
     /// `<data_root>/workspaces/<id>`.
     pub root: PathBuf,
-    /// `<root>/project`, the directory `ahoc` works in.
+    /// `<root>/project`, the directory `ahoc` works in (never created for sandbox chats).
     pub project_dir: PathBuf,
     /// Also serialises writes of `workspace.json`.
     session: tokio::sync::Mutex<Option<String>>,
@@ -124,6 +124,8 @@ impl Workspace {
 #[derive(Debug)]
 pub struct WorkspaceStore {
     root: PathBuf,
+    /// Whether records get a `project/` directory (workspaces) or not (sandbox chats).
+    with_project_dir: bool,
     open: Mutex<HashMap<String, Arc<Workspace>>>,
     /// Held while a workspace is read from or created on disk, so concurrent first starts of
     /// one workspace never write its state file at the same time.
@@ -133,7 +135,18 @@ pub struct WorkspaceStore {
 impl WorkspaceStore {
     /// Workspaces live in `<data_root>/workspaces`; nothing is created until [`Self::start`].
     pub fn new(data_root: &Path) -> Self {
-        Self { root: data_root.join("workspaces"), open: Mutex::new(HashMap::new()), loading: tokio::sync::Mutex::new(()) }
+        Self::at(data_root.join("workspaces"), true)
+    }
+
+    /// Sandbox chats: the same `(slug, user)` → session id record, with the sandbox slug as
+    /// `project`, under `<data_root>/sandbox-chats`. No project directory is created: that aho
+    /// works on the sandbox's own `/workspace`.
+    pub fn sandbox_chats(data_root: &Path) -> Self {
+        Self::at(data_root.join("sandbox-chats"), false)
+    }
+
+    fn at(root: PathBuf, with_project_dir: bool) -> Self {
+        Self { root, with_project_dir, open: Mutex::new(HashMap::new()), loading: tokio::sync::Mutex::new(()) }
     }
 
     /// Creates or resumes the workspace for `(project, user_id)`. A `session_id` replaces the one
@@ -169,8 +182,8 @@ impl WorkspaceStore {
     /// Reads the workspace's state back, or creates it. Callers hold [`Self::loading`].
     async fn load_or_create(&self, id: String, project: &str, user_id: &str) -> Result<Arc<Workspace>, WorkspaceError> {
         let root = self.root.join(&id);
-        let project_dir = root.join(PROJECT_DIR);
-        tokio::fs::create_dir_all(&project_dir).await.map_err(|source| WorkspaceError::Io { path: project_dir.clone(), source })?;
+        let dir = if self.with_project_dir { root.join(PROJECT_DIR) } else { root.clone() };
+        tokio::fs::create_dir_all(&dir).await.map_err(|source| WorkspaceError::Io { path: dir.clone(), source })?;
         let state = match read_state(&root).await? {
             Some(state) if state.project == project && state.user_id == user_id => state,
             Some(_) => return Err(WorkspaceError::Corrupt { id, reason: "recorded project/user do not match the id".into() }),

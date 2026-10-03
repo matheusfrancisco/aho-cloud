@@ -47,7 +47,7 @@ pub async fn files(State(st): State<AppState>, Caller(user): Caller, Path(p): Pa
 
 /// Workspace-relative and `/`-separated, never absolute, never climbing out, no NUL. The
 /// session host confines paths itself; the obvious escapes do not leave this process.
-fn valid_path(path: &str) -> bool {
+pub(super) fn valid_path(path: &str) -> bool {
     !path.is_empty() && path.len() <= MAX_PATH && !path.starts_with('/') && !path.contains('\0') && path.split('/').all(|s| s != "..")
 }
 

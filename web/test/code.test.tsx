@@ -66,7 +66,7 @@ describe("code panel", () => {
     const user = userEvent.setup();
     const files = vi.spyOn(api, "workspaceFiles").mockResolvedValue({ files: [file("assets/logo.png"), file("src/main.rs"), file("README.md")], truncated: true });
     const read = vi.spyOn(api, "workspaceFile").mockImplementation(async (_p, path) => contents[path]!);
-    render(<CodePanel project="shop" refreshKey={0} />);
+    render(<CodePanel target={{ kind: "project", project: "shop" }} refreshKey={0} />);
 
     expect(await screen.findByText("More files exist than are listed here.")).toBeInTheDocument();
     expect(files).toHaveBeenCalledWith("shop");
@@ -94,13 +94,13 @@ describe("code panel", () => {
 
   it("refreshes once, shortly after a burst of agent activity", async () => {
     const files = vi.spyOn(api, "workspaceFiles").mockResolvedValue({ files: [file("a.txt")], truncated: false });
-    const { rerender } = render(<CodePanel project="shop" refreshKey={0} />);
+    const { rerender } = render(<CodePanel target={{ kind: "project", project: "shop" }} refreshKey={0} />);
     await screen.findByRole("button", { name: "a.txt" });
     expect(files).toHaveBeenCalledTimes(1);
     vi.useFakeTimers();
     try {
       for (let k = 1; k <= 3; k++) {
-        rerender(<CodePanel project="shop" refreshKey={k} />);
+        rerender(<CodePanel target={{ kind: "project", project: "shop" }} refreshKey={k} />);
         await act(() => vi.advanceTimersByTimeAsync(300));
       }
       expect(files).toHaveBeenCalledTimes(1);
@@ -113,7 +113,7 @@ describe("code panel", () => {
 
   it("says when the workspace has no files yet", async () => {
     vi.spyOn(api, "workspaceFiles").mockResolvedValue({ files: [], truncated: false });
-    render(<CodePanel project="shop" refreshKey={0} />);
+    render(<CodePanel target={{ kind: "project", project: "shop" }} refreshKey={0} />);
     expect(await screen.findByText("No files yet. Ask aho to build something.")).toBeInTheDocument();
   });
 });

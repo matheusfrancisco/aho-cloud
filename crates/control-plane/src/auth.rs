@@ -9,7 +9,7 @@ use cloud_api::User;
 use crate::crypto::{ct_eq, random_token, token_hash};
 use crate::error::AppError;
 use crate::state::AppState;
-use crate::store::{MemberRec, OrgRec, ProjectRec, TokenRec, UserRec};
+use crate::store::{MemberRec, OrgRec, ProjectRec, SandboxRec, TokenRec, UserRec};
 
 fn bearer(parts: &Parts) -> Option<&str> {
     let v = parts.headers.get(AUTHORIZATION)?.to_str().ok()?;
@@ -121,6 +121,13 @@ pub async fn live_project(state: &AppState, project: &str) -> Result<ProjectRec,
         Some(p) if p.deleted_at.is_none() => Ok(p),
         _ => Err(AppError::not_found(format!("project {project}"))),
     }
+}
+
+/// The sandbox, if `user` belongs to its org (every member may use it).
+pub async fn sandbox_access(state: &AppState, user: &UserRec, sandbox: &str) -> Result<(SandboxRec, MemberRec), AppError> {
+    let s = state.store.sandbox(sandbox).await?.ok_or_else(|| AppError::not_found(format!("sandbox {sandbox}")))?;
+    let m = state.store.member(&s.org, &user.id).await?.ok_or_else(|| AppError::forbidden(format!("not a member of {}", s.org)))?;
+    Ok((s, m))
 }
 
 pub fn require_owner(m: &MemberRec, action: &str) -> Result<(), AppError> {

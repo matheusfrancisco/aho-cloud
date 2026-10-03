@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
-import type { LedgerEntry, Project, Release } from "../src/gen/api";
+import type { LedgerEntry, Project, Release, Sandbox } from "../src/gen/api";
 import { api } from "../src/lib/api";
 import { signIn } from "../src/lib/session";
 import { filterRows, projectRow, projectStatus, recentActivity, statusCounts } from "../src/lib/status";
@@ -97,10 +97,16 @@ describe("project status", () => {
 });
 
 describe("org dashboard", () => {
-  function mockOrg(projects: Project[]) {
+  function sandbox(slug: string, state: Sandbox["state"]): Sandbox {
+    const settings = { egress: [], port: null, auto_stop_hours: 8 };
+    return { slug, org: "acme", state, created_by: ana, created_at: 0, image: "aho.sandbox@sha256:aa", settings, url: null, stops_at: null, cpus: 2, mem_mib: 2048, disk_mib: 10240, error: null };
+  }
+
+  function mockOrg(projects: Project[], sandboxes: Sandbox[] = []) {
     signIn({ token: "t", user: ana });
     vi.spyOn(api, "me").mockResolvedValue({ user: ana, orgs: [{ org: "acme", owner: true }] });
     vi.spyOn(api, "projects").mockResolvedValue(projects);
+    vi.spyOn(api, "sandboxes").mockResolvedValue(sandboxes);
     vi.spyOn(api, "releases").mockImplementation(async (p) => releasesOf[p] ?? []);
     vi.spyOn(api, "ledger").mockImplementation(async (p) => (p === "shop" ? [entry(1, Date.now() - 60_000, "r-2")] : []));
     return render(
@@ -115,7 +121,7 @@ describe("org dashboard", () => {
 
   it("shows status chips with counts, filters by search and chip, and focuses search on /", async () => {
     const user = userEvent.setup();
-    mockOrg([shop, blog, apiProject, docs, empty]);
+    mockOrg([shop, blog, apiProject, docs, empty], [sandbox("scratch", "running"), sandbox("old", "stopped")]);
     expect(await screen.findByRole("link", { name: "blog" })).toBeInTheDocument();
     expect(chip(/^Live/)).toHaveTextContent("Live 1");
     expect(chip(/^Preview/)).toHaveTextContent("Preview 1");
@@ -143,6 +149,13 @@ describe("org dashboard", () => {
     expect(within(activity).getByText(/built/)).toBeInTheDocument();
     const terminal = screen.getByRole("region", { name: "Deploy from your terminal" });
     expect(terminal).toHaveTextContent("ahocloud -p shop deploy");
+
+    // Sandboxes sit beside the projects: a count, each with its state, and the full list.
+    const sandboxes = screen.getByRole("region", { name: "Sandboxes" });
+    expect(within(sandboxes).getByText("2")).toBeInTheDocument();
+    expect(within(sandboxes).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["scratchrunning", "oldstopped"]);
+    expect(within(sandboxes).getByRole("link", { name: "scratch" })).toHaveAttribute("href", "/sandboxes/scratch");
+    expect(within(sandboxes).getByRole("link", { name: "View all" })).toHaveAttribute("href", "/orgs/acme/sandboxes");
   });
 
   it("shows the empty state with a create button when the org has no projects", async () => {
@@ -150,6 +163,7 @@ describe("org dashboard", () => {
     mockOrg([]);
     expect(await screen.findByText("You don't have any projects yet")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Deploy from your terminal" })).toHaveTextContent("ahocloud -p <project> deploy");
+    expect(await within(screen.getByRole("region", { name: "Sandboxes" })).findByText(/A sandbox is a VM with aho/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Create a project/ }));
     expect(screen.getByRole("dialog", { name: "New project" })).toBeInTheDocument();
   });

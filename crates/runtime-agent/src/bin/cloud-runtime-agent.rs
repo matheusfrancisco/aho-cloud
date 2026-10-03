@@ -1,6 +1,7 @@
-//! `cloud-runtime-agent`: the per-host daemon. Serves the internal deployment API and runs the
-//! reconcile loop over Firecracker microVMs (with the egress proxy guests must use), or over
-//! Docker containers for local development (`--backend docker`, no isolation boundary).
+//! `cloud-runtime-agent`: the per-host daemon. Serves the internal deployment and sandbox API
+//! and runs the reconcile loop over Firecracker microVMs (with the egress proxy guests must
+//! use), or over Docker containers for local development (`--backend docker`, no isolation
+//! boundary).
 
 #![forbid(unsafe_code)]
 
@@ -96,6 +97,9 @@ struct Args {
     unhealthy_threshold: u32,
     #[arg(long, default_value_t = 60)]
     startup_grace_secs: u64,
+    /// Consecutive boot failures (or deaths) after which a sandbox reports `failed`.
+    #[arg(long, default_value_t = 3)]
+    sandbox_failures: u32,
     /// `docker` CLI (docker backend).
     #[arg(long, default_value = "docker")]
     docker: PathBuf,
@@ -125,6 +129,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         health_timeout: Duration::from_millis(args.health_timeout_ms),
         unhealthy_threshold: args.unhealthy_threshold,
         startup_grace: Duration::from_secs(args.startup_grace_secs),
+        sandbox_failures: args.sandbox_failures,
     };
     let api_listener = tokio::net::TcpListener::bind(args.listen).await?;
     let interval = Duration::from_secs(args.reconcile_interval_secs.max(1));

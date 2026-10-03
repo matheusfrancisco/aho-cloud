@@ -7,10 +7,10 @@ use std::net::IpAddr;
 
 use async_trait::async_trait;
 use cloud_api::internal::{
-    BuildJob, BuildResult, Deployment, DeploymentStatus, Maintenance, ProcessStatus, RunState, Scale, StartWorkspace, WorkspaceFileRef,
-    WorkspacePackage, WorkspaceRef, WorkspaceStarted,
+    BuildJob, BuildResult, Deployment, DeploymentStatus, Maintenance, ProcessStatus, RunState, SandboxChatStart, SandboxSpec,
+    SandboxStatus, SandboxTerminal, Scale, StartWorkspace, WorkspaceFileRef, WorkspacePackage, WorkspaceRef, WorkspaceStarted,
 };
-use cloud_api::{FileContent, FileEntry, FileKind, FileTree};
+use cloud_api::{FileContent, FileEntry, FileKind, FileTree, SandboxChat, SandboxState, TerminalAccess};
 use cloud_contract::ledger::Stage;
 use cloud_domains::{DnsError, Resolver, normalize_name};
 use futures::future::BoxFuture;
@@ -70,14 +70,21 @@ pub enum RuntimeCall {
     Scale { project: String, stage: Stage, scale: Scale },
     Maintenance { project: String, stage: Stage, on: bool },
     Sleep { project: String, stage: Stage },
+    StopSandbox { slug: String },
+    DeleteSandbox { slug: String },
 }
 
-/// A runtime that records deployments and reports every process healthy at `10.0.0.1:<port>`.
+/// A runtime that records deployments and reports every process healthy at `10.0.0.1:<port>`;
+/// sandboxes run as soon as they are put, their port at `10.0.1.1:<port>`.
 #[derive(Default)]
 pub struct FakeRuntime {
     deployments: Mutex<Vec<Deployment>>,
     calls: Mutex<Vec<RuntimeCall>>,
     status: Mutex<BTreeMap<(String, Stage), DeploymentStatus>>,
+    sandbox_specs: Mutex<Vec<SandboxSpec>>,
+    sandboxes: Mutex<BTreeMap<String, SandboxStatus>>,
+    /// Slug → path → text: the disk, kept while stopped.
+    sandbox_files: Mutex<BTreeMap<String, BTreeMap<String, String>>>,
 }
 
 impl FakeRuntime {
@@ -97,6 +104,40 @@ impl FakeRuntime {
     /// The release running at `(project, stage)`.
     pub fn running(&self, project: &str, stage: Stage) -> Option<String> {
         self.status.lock().get(&(project.to_owned(), stage)).map(|s| s.release.clone())
+    }
+
+    /// Every sandbox spec put, in order (including the environment it carried).
+    pub fn sandbox_specs(&self) -> Vec<SandboxSpec> {
+        self.sandbox_specs.lock().clone()
+    }
+
+    /// What the runtime would answer for `slug` now.
+    pub fn sandbox(&self, slug: &str) -> Option<SandboxStatus> {
+        self.sandboxes.lock().get(slug).cloned()
+    }
+
+    /// The sandbox's VM dies with `error`.
+    pub fn fail_sandbox(&self, slug: &str, error: &str) {
+        if let Some(s) = self.sandboxes.lock().get_mut(slug) {
+            s.state = SandboxState::Failed;
+            s.address = None;
+            s.error = Some(error.to_owned());
+        }
+    }
+
+    /// A text file at `path` (`/`-separated) on the sandbox's disk.
+    pub fn put_sandbox_file(&self, slug: &str, path: &str, text: &str) {
+        self.sandbox_files.lock().entry(slug.to_owned()).or_default().insert(path.to_owned(), text.to_owned());
+    }
+
+    /// Files are read by exec sessions in the guest: only while it runs.
+    fn running_disk(&self, slug: &str) -> Result<BTreeMap<String, String>, PortError> {
+        match self.sandboxes.lock().get(slug).map(|s| s.state) {
+            None => return Err(PortError::NotFound { service: "runtime", message: format!("no sandbox {slug}") }),
+            Some(SandboxState::Running) => {}
+            Some(_) => return Err(PortError::Rejected { service: "runtime", message: format!("sandbox {slug} is not running") }),
+        }
+        Ok(self.sandbox_files.lock().get(slug).cloned().unwrap_or_default())
     }
 
     fn set_state(&self, project: &str, stage: Stage, state: RunState) -> Result<(), PortError> {
@@ -171,15 +212,63 @@ impl RuntimeService for FakeRuntime {
         self.calls.lock().push(RuntimeCall::Sleep { project: project.into(), stage });
         Ok(())
     }
+
+    async fn put_sandbox(&self, spec: SandboxSpec) -> Result<SandboxStatus, PortError> {
+        let status = SandboxStatus {
+            slug: spec.slug.clone(),
+            state: SandboxState::Running,
+            address: spec.port.map(|port| format!("10.0.1.1:{port}")),
+            error: None,
+        };
+        self.sandboxes.lock().insert(spec.slug.clone(), status.clone());
+        self.sandbox_specs.lock().push(spec);
+        Ok(status)
+    }
+
+    async fn sandbox_status(&self, slug: &str) -> Result<Option<SandboxStatus>, PortError> {
+        Ok(self.sandboxes.lock().get(slug).cloned())
+    }
+
+    async fn stop_sandbox(&self, slug: &str) -> Result<Option<SandboxStatus>, PortError> {
+        self.calls.lock().push(RuntimeCall::StopSandbox { slug: slug.to_owned() });
+        Ok(self.sandboxes.lock().get_mut(slug).map(|s| {
+            s.state = SandboxState::Stopped;
+            s.address = None;
+            s.error = None;
+            s.clone()
+        }))
+    }
+
+    async fn delete_sandbox(&self, slug: &str) -> Result<(), PortError> {
+        self.calls.lock().push(RuntimeCall::DeleteSandbox { slug: slug.to_owned() });
+        self.sandboxes.lock().remove(slug);
+        self.sandbox_files.lock().remove(slug);
+        Ok(())
+    }
+
+    async fn sandbox_files(&self, slug: &str) -> Result<FileTree, PortError> {
+        Ok(tree(&self.running_disk(slug)?))
+    }
+
+    async fn sandbox_file(&self, slug: &str, path: &str) -> Result<FileContent, PortError> {
+        let disk = self.running_disk(slug)?;
+        let text = disk
+            .get(path)
+            .ok_or_else(|| PortError::NotFound { service: "runtime", message: format!("no file {path} in the workspace") })?;
+        Ok(FileContent { path: path.to_owned(), size: size_of(text), text: Some(text.clone()), truncated: false })
+    }
 }
 
 /// A session host that hands out `wss://sessions.test/rpc/<project>` workspaces and serves the
-/// packages and files put into it, per `(project, user_id)`.
+/// packages and files put into it, per `(project, user_id)`; it records the sandbox terminals and
+/// chats asked of it.
 #[derive(Default)]
 pub struct FakeSessionHost {
     requests: Mutex<Vec<StartWorkspace>>,
     workspaces: Mutex<BTreeMap<(String, String), FakeWorkspace>>,
     packed: Mutex<Vec<WorkspaceRef>>,
+    terminals: Mutex<Vec<SandboxTerminal>>,
+    chats: Mutex<Vec<SandboxChatStart>>,
 }
 
 #[derive(Default)]
@@ -203,6 +292,16 @@ impl FakeSessionHost {
         self.packed.lock().clone()
     }
 
+    /// Every sandbox terminal asked for, in order.
+    pub fn terminals(&self) -> Vec<SandboxTerminal> {
+        self.terminals.lock().clone()
+    }
+
+    /// Every sandbox chat asked for, in order.
+    pub fn chats(&self) -> Vec<SandboxChatStart> {
+        self.chats.lock().clone()
+    }
+
     /// What [`SessionHostService::package`] answers for `user_id`'s workspace in `project`.
     pub fn put_package(&self, project: &str, user_id: &str, package: WorkspacePackage) {
         self.workspaces.lock().entry((project.to_owned(), user_id.to_owned())).or_default().package = Some(package);
@@ -220,6 +319,19 @@ impl FakeSessionHost {
 
 fn size_of(text: &str) -> u64 {
     u64::try_from(text.len()).unwrap_or(u64::MAX)
+}
+
+/// Every file plus the directories above it, in path order, like the real listing.
+fn tree(files: &BTreeMap<String, String>) -> FileTree {
+    let mut entries: BTreeMap<String, FileEntry> = BTreeMap::new();
+    for (path, text) in files {
+        for (end, _) in path.match_indices('/') {
+            let dir = &path[..end];
+            entries.entry(dir.to_owned()).or_insert_with(|| FileEntry { path: dir.to_owned(), kind: FileKind::Dir, size: 0 });
+        }
+        entries.insert(path.clone(), FileEntry { path: path.clone(), kind: FileKind::File, size: size_of(text) });
+    }
+    FileTree { files: entries.into_values().collect(), truncated: false }
 }
 
 #[async_trait]
@@ -248,16 +360,7 @@ impl SessionHostService for FakeSessionHost {
         let w = g
             .get(&(workspace.project.clone(), workspace.user_id.clone()))
             .ok_or_else(|| Self::missing(format!("no workspace for {} in {}", workspace.user_id, workspace.project)))?;
-        // Every file plus the directories above it, in path order, like the real listing.
-        let mut entries: BTreeMap<String, FileEntry> = BTreeMap::new();
-        for (path, text) in &w.files {
-            for (end, _) in path.match_indices('/') {
-                let dir = &path[..end];
-                entries.entry(dir.to_owned()).or_insert_with(|| FileEntry { path: dir.to_owned(), kind: FileKind::Dir, size: 0 });
-            }
-            entries.insert(path.clone(), FileEntry { path: path.clone(), kind: FileKind::File, size: size_of(text) });
-        }
-        Ok(FileTree { files: entries.into_values().collect(), truncated: false })
+        Ok(tree(&w.files))
     }
 
     async fn file(&self, file: WorkspaceFileRef) -> Result<FileContent, PortError> {
@@ -267,6 +370,21 @@ impl SessionHostService for FakeSessionHost {
             .and_then(|w| w.files.get(&file.path))
             .ok_or_else(|| Self::missing(format!("no file {} in the workspace", file.path)))?;
         Ok(FileContent { path: file.path.clone(), size: size_of(text), text: Some(text.clone()), truncated: false })
+    }
+
+    async fn sandbox_terminal(&self, request: SandboxTerminal) -> Result<TerminalAccess, PortError> {
+        self.terminals.lock().push(request);
+        Ok(TerminalAccess { url: "wss://sessions.test/terminal".into(), token: b64url(&random_bytes(16)) })
+    }
+
+    async fn sandbox_chat(&self, request: SandboxChatStart) -> Result<SandboxChat, PortError> {
+        let chat = SandboxChat {
+            rpc_url: format!("wss://sessions.test/sandbox-rpc/{}", request.sandbox),
+            token: b64url(&random_bytes(16)),
+            session_id: request.session_id.clone(),
+        };
+        self.chats.lock().push(request);
+        Ok(chat)
     }
 }
 

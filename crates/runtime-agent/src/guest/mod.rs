@@ -1,14 +1,15 @@
 //! What runs inside a microVM: the config drive the host writes, the NDJSON control protocol
-//! the host speaks over vsock, and the process runner `cloud-guest` (PID 1) uses.
+//! the host speaks over vsock, the process runner `cloud-guest` (PID 1) uses, and the exec
+//! server sandboxes are reached through.
 
 pub mod control;
+pub mod exec;
 pub mod init;
 pub mod process;
 
 use std::collections::BTreeMap;
 use std::net::Ipv4Addr;
 
-use cloud_contract::manifest::Health;
 use serde::{Deserialize, Serialize};
 
 /// Kernel parameter (passed to init as an environment variable) naming the config drive device.
@@ -19,12 +20,24 @@ pub const CONFIG_DEVICE: &str = "/dev/vdb";
 pub const VOLUME_DEVICE: &str = "/dev/vdc";
 /// vsock port `cloud-guest` serves the control protocol on.
 pub const CONTROL_PORT: u32 = 52;
+/// vsock port `cloud-guest` serves exec sessions on ([`exec`], one session per connection).
+pub const EXEC_PORT: u32 = 53;
 /// Where the host places the `cloud-guest` binary in every rootfs; the kernel's `init=`.
 pub const GUEST_INIT_PATH: &str = "/.cloud/guest";
 /// `PATH` for processes whose image does not set one.
 pub const DEFAULT_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 /// Config drives are padded to a whole number of these.
 const DRIVE_BLOCK: usize = 4096;
+/// `cloud-guest file|files` exit status: the path is not a workspace path, is private, escapes
+/// the root or is not a regular file.
+pub const EXIT_BAD_PATH: i32 = 3;
+/// `cloud-guest file|files` exit status: no such file in the workspace.
+pub const EXIT_NOT_FOUND: i32 = 4;
+
+/// `[A-Za-z_][A-Za-z0-9_]*`: a name every environment carrier (env files included) can hold.
+pub fn is_env_name(key: &str) -> bool {
+    key.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum GuestError {
@@ -72,7 +85,6 @@ pub struct GuestConfig {
     /// Platform variables and secret values; these override the image's env.
     pub env: BTreeMap<String, String>,
     pub port: Option<u16>,
-    pub health: Health,
     pub volume: Option<VolumeMount>,
     /// Resolvers for `/etc/resolv.conf`.
     pub dns: Vec<Ipv4Addr>,
@@ -132,7 +144,6 @@ mod tests {
             },
             env: BTreeMap::from([("PORT".into(), "8080".into()), ("API_KEY".into(), "s3cret".into())]),
             port: Some(8080),
-            health: Health::Http { path: "/healthz".into(), port: None },
             volume: None,
             dns: vec![Ipv4Addr::new(10, 77, 0, 1)],
         }

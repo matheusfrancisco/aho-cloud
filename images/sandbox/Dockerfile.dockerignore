@@ -1,0 +1,5 @@
+target
+.dev
+.git
+web/node_modules
+web/dist

@@ -30,7 +30,8 @@ const NEW_SESSION: &str = "5e55100";
 const STEP: Duration = Duration::from_secs(10);
 
 /// Fake `ahoc`: `hello` → `hello_ok` whose session is the `--session` value (or [`NEW_SESSION`])
-/// and whose payload also reports argv and the physical cwd; `exit` → exit 3; `quit` → exit 0;
+/// and whose payload also reports argv and the physical cwd; `exit` → exit 3; `fail` → two
+/// stderr lines, exit 1; `quit` → exit 0;
 /// `hang` → stop reading stdin forever; anything else is echoed back as a `result` payload.
 const FAKE_AHOC: &str = r#"#!/bin/sh
 session=""
@@ -46,6 +47,7 @@ while IFS= read -r line; do
     *'"method":"hello"'*)
       printf '{"v":1,"reply_to":0,"event":"hello_ok","payload":{"version":1,"session":"%s","argv":"%s","cwd":"%s"}}\n' "$session" "$argv" "$(pwd -P)" ;;
     *'"method":"exit"'*) exit 3 ;;
+    *'"method":"fail"'*) echo "ahoc: starting" >&2; printf 'ahoc: no model route is active\n\n' >&2; exit 1 ;;
     *'"method":"quit"'*) exit 0 ;;
     *'"method":"hang"'*) while :; do sleep 1; done ;;
     *) printf '{"v":1,"reply_to":null,"event":"result","payload":%s}\n' "$line" ;;
@@ -84,6 +86,7 @@ async fn host(limits: Limits) -> Host {
         token_ttl: Duration::from_secs(60),
         command: CommandTemplate { program: script, sets: vec!["seams.world=vm".into()], ..CommandTemplate::default() },
         limits,
+        sandbox: cloud_session_host::SandboxConfig::default(),
     };
     let host = SessionHost::new(config, Arc::new(TokioSpawner)).unwrap();
     tokio::spawn(host.serve(listener, std::future::pending()));
@@ -409,6 +412,18 @@ async fn child_exit_closes_the_socket() {
     assert!(texts.is_empty(), "{texts:?}");
     assert_eq!(close.code, CloseCode::Error);
     assert!(close.reason.contains("code 3"), "{close:?}");
+
+    // A failure explained on stderr: its last line reaches the client.
+    let explained = h.start("shop", "u3").await;
+    let mut ws = connect(&url(&explained)).await;
+    hello(&mut ws).await;
+    send_text(&mut ws, json!({"v": 1, "id": 1, "method": "fail"}).to_string()).await;
+    let (texts, close) = recv_close(&mut ws).await;
+    let why = "session process exited with code 1: ahoc: no model route is active";
+    assert_eq!(texts.len(), 1, "{texts:?}");
+    assert_eq!(texts[0]["event"], "error");
+    assert_eq!(texts[0]["payload"]["message"], why);
+    assert_eq!((close.code, close.reason.as_str()), (CloseCode::Error, why));
 
     let clean = h.start("shop", "u2").await;
     let mut ws = connect(&url(&clean)).await;

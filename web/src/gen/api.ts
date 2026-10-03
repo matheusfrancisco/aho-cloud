@@ -5,7 +5,8 @@ import type { Manifest, DomainMode, Refusal, SurfaceDiff, ReleasePolicy, Require
 export type ApiError = { 
 /**
  * Stable, snake_case: `unauthorized`, `forbidden`, `not_found`, `conflict`, `invalid`,
- * `refused`, `quorum_not_met`, `tainted`, `rate_limited`, `internal`.
+ * `refused`, `quorum_not_met`, `tainted`, `rate_limited`, `internal`, `sandboxes_disabled`
+ * (503: this deployment runs no sandboxes).
  */
 code: string, message: string, 
 /**
@@ -219,6 +220,84 @@ text: string | null,
  */
 truncated: boolean, };
 
+export type CreateSandbox = { slug: string, 
+/**
+ * Defaults: [`DEFAULT_SANDBOX_EGRESS`], no public port, [`SANDBOX_AUTO_STOP_DEFAULT_HOURS`].
+ */
+settings: SandboxSettings | null, };
+
+export type SandboxSettings = { 
+/**
+ * Hosts the VM may reach (`*.example.com` wildcards); everything else is refused.
+ */
+egress: Array<string>, 
+/**
+ * Served at [`Sandbox::url`] behind the edge's email sign-in, open to org members only.
+ */
+port: number | null, 
+/**
+ * The VM stops this long after each start (the disk is kept); 1 ..=
+ * [`SANDBOX_AUTO_STOP_MAX_HOURS`].
+ */
+auto_stop_hours: number, };
+
+export type SandboxState = "starting" | "running" | "stopped" | "failed";
+
+export type Sandbox = { slug: string, org: string, state: SandboxState, created_by: User, 
+/**
+ * Unix seconds.
+ */
+created_at: number, 
+/**
+ * `<repo>@sha256:…` the VM boots from.
+ */
+image: string, settings: SandboxSettings, 
+/**
+ * `https://<slug>.<preview domain>` while `settings.port` is set.
+ */
+url: string | null, 
+/**
+ * Unix seconds the running VM is stopped at.
+ */
+stops_at: number | null, cpus: number, mem_mib: number, disk_mib: number, 
+/**
+ * Why it is `failed`.
+ */
+error: string | null, };
+
+export type TerminalRequest = { cols: number, rows: number, 
+/**
+ * Defaults to a login shell.
+ */
+command: Array<string> | null, 
+/**
+ * Pipes instead of a terminal (stdout and stderr stay apart, no `\r\n`, no echo), like
+ * `ssh -T`: for scripts and piped input. `cols`/`rows` are then ignored.
+ */
+no_pty: boolean, };
+
+export type TerminalAccess = { url: string, token: string, };
+
+export type StartSandboxChat = { session_id: string | null, };
+
+export type SandboxChat = { rpc_url: string, token: string, session_id: string | null, };
+
+export type SetEnvVar = { name: string, value: string, };
+
+export type EnvVarView = { name: string, fingerprint: string, };
+
+export type ExecRequest = { argv: Array<string>, 
+/**
+ * Allocate a terminal of this size; without it, stdout and stderr are separate pipes.
+ */
+pty: PtySize | null, 
+/**
+ * Added to the sandbox's own environment.
+ */
+env: { [key in string]: string }, cwd: string | null, };
+
+export type PtySize = { cols: number, rows: number, };
+
 export type LedgerEntry = { id: number, hash: string, 
 /**
  * Unix milliseconds.
@@ -258,6 +337,17 @@ export const routes = {
   WORKSPACE_DEPLOY: "/v1/projects/{p}/workspace/deploy",
   WORKSPACE_FILES: "/v1/projects/{p}/workspace/files",
   WORKSPACE_FILE: "/v1/projects/{p}/workspace/file",
+  ORG_SANDBOXES: "/v1/orgs/{org}/sandboxes",
+  SANDBOX: "/v1/sandboxes/{s}",
+  SANDBOX_START: "/v1/sandboxes/{s}/start",
+  SANDBOX_STOP: "/v1/sandboxes/{s}/stop",
+  SANDBOX_TERMINAL: "/v1/sandboxes/{s}/terminal",
+  SANDBOX_CHAT: "/v1/sandboxes/{s}/chat",
+  SANDBOX_FILES: "/v1/sandboxes/{s}/files",
+  SANDBOX_FILE: "/v1/sandboxes/{s}/file",
+  SANDBOX_SETTINGS: "/v1/sandboxes/{s}/settings",
+  SANDBOX_ENV: "/v1/sandboxes/{s}/env",
+  SANDBOX_ENV_VAR: "/v1/sandboxes/{s}/env/{name}",
 } as const;
 
 /** Fills `{name}` placeholders, URI-encoding each value. */

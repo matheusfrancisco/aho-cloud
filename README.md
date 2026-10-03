@@ -14,10 +14,10 @@ crates/api             control-plane routes + bodies, internal service bodies, t
 crates/ledger          per-project release ledger on aho-log
 crates/control-plane   the API server                         bin: cloud-control-plane
 crates/builder         source → OCI image (BuildKit, pack)    bin: cloud-builder
-crates/runtime-agent   Firecracker microVMs, egress proxy     bins: cloud-runtime-agent, cloud-guest
+crates/runtime-agent   Firecracker microVMs, sandboxes, egress proxy  bins: cloud-runtime-agent, cloud-guest
 crates/domains         domain bindings, DNS, ACME, certs, RDAP
 crates/edge            TLS reverse proxy, edge login, JWT     bin: cloud-edge
-crates/session-host    browser ↔ aho rpc, workspace files     bin: cloud-session-host
+crates/session-host    browser ↔ aho rpc, workspace files, sandbox terminals  bin: cloud-session-host
 crates/draft           aho session log → manifest draft
 crates/importers       Dockerfile/Procfile/compose/fly/render/app.yaml/package.json → draft
 crates/workdir         project dir → source archive, file tree, session log, draft (CLI + session host)
@@ -26,6 +26,7 @@ crates/cap-edge-contract  aho capability: edge contract prompt, edge_routes, edg
 crates/bundle-cloud    aho-lab + the caps                     bin: ahoc
 crates/ahocloud        customer CLI                           bin: ahocloud
 web/                   React console
+images/sandbox/        the sandbox VM image (Debian, toolchains, aho, cloud-guest)
 schema/manifest.v1.json  published JSON Schema (generated)
 ```
 
@@ -89,8 +90,27 @@ ahocloud --api-url http://127.0.0.1:8080 -p shop deploy --dir path/to/app
 ahocloud --api-url http://127.0.0.1:8080 -p shop approve <release> --stage staging   # then promote
 ```
 
+### Sandboxes (a VM with aho, no deploy)
+
+`--with-deploy` also builds the sandbox image (`scripts/build-sandbox-image.sh`; the first build
+compiles aho for Linux in Docker, a few minutes, later starts reuse the cache) and pushes it to the
+local registry. In the console, **Create → New sandbox**:
+
+- **Terminal**: a shell in the sandbox (`aho` runs the agent's TUI there). Same from a terminal:
+  `ahocloud --api-url http://127.0.0.1:8080 ssh <sandbox>`, or `ahocloud ssh <sandbox> -- aho`.
+- **Chat**: aho rpc to the aho running inside the sandbox; its tools and files stay in the sandbox.
+- **Files**: `/workspace`, the only directory kept across restarts. The home directory lives on
+  the same disk (`/home/aho` → `/workspace/.aho/home`, hidden from Files), so shell history, git
+  config, caches and `aho login` survive a stop.
+- **Settings**: environment variables (add `ANTHROPIC_API_KEY` for the aho inside; values are
+  write-only and reach the VM at its next start), egress hosts, a public port served at
+  `http://<sandbox>.preview.localhost:8443` behind email sign-in for org members, auto-stop hours.
+
+`ahocloud sandbox create|ls|start|stop|rm|settings|env` manage them from the CLI.
+
 Containers stand in for microVMs: no VM isolation, no egress allowlist, Docker's own memory/CPU/pids
-limits. Buildpack builds need `pack`, which the script does not install. Prompts in a workspace use
+limits. Sandbox disks are Docker volumes named `aho-cloud-sandbox.<slug>`; the in-memory control
+plane forgets sandboxes on restart, so remove leftovers with `docker volume rm`. Buildpack builds need `pack`, which the script does not install. Prompts in a workspace use
 your aho provider login (`~/.aho`) and spend its credits.
 
 ## External programs (production hosts)
@@ -103,4 +123,5 @@ Tests never need these; they run against in-process fakes and fake CLI scripts.
 | runtime-agent | Linux + KVM, `firecracker`, kernel image, `skopeo`, `umoci`, `mkfs.ext4`, `ip`, `nft`, cgroup v2 (or `--backend docker` for development) |
 | control-plane | Postgres (or `--ephemeral` for development) |
 | edge | ACME CA (Let's Encrypt), SMTP for magic links, OIDC client ids |
-| session-host | `ahoc` (from `bundle-cloud`) and aho's VM world prerequisites |
+| session-host | `ahoc` (from `bundle-cloud`) and aho's VM world prerequisites; `--runtime-url` for sandboxes |
+| sandbox image | Docker with buildx to build `images/sandbox` (control plane `--sandbox-image`) |

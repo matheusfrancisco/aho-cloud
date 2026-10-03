@@ -17,9 +17,10 @@ use crate::sites::EDGE_PASSWORD;
 use crate::state::AppState;
 use crate::store::SecretRec;
 
-const MAX_VALUE_BYTES: usize = 64 * 1024;
+pub(super) const MAX_VALUE_BYTES: usize = 64 * 1024;
 
-fn valid_name(name: &str) -> bool {
+/// Environment-variable style: `[A-Z][A-Z0-9_]*`, at most 128 characters.
+pub(super) fn valid_name(name: &str) -> bool {
     (1..=128).contains(&name.len())
         && name.starts_with(|c: char| c.is_ascii_uppercase())
         && name.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')

@@ -9,9 +9,10 @@ import { signOut, useSession } from "../lib/session";
 import { slugProblem } from "../lib/slug";
 import { ErrorBox } from "../ui/common";
 import { useAction, useLoad } from "../ui/hooks";
-import { ChevronDown, IconSquare, LogoMark, OrgIcon, PlusIcon, PolicyIcon, ProjectsIcon, RocketIcon, TeamIcon, UserIcon } from "../ui/icons";
+import { ChevronDown, IconSquare, LogoMark, OrgIcon, PlusIcon, PolicyIcon, ProjectsIcon, RocketIcon, SandboxIcon, TeamIcon, UserIcon } from "../ui/icons";
 import { Dropdown } from "../ui/overlay";
 import { CreateProjectModal } from "./CreateProject";
+import { CreateSandboxModal } from "./CreateSandbox";
 
 export interface ShellState {
   me: Me | undefined;
@@ -20,9 +21,10 @@ export interface ShellState {
   /** The org the sidebar is scoped to. */
   org: string | null;
   createProject: () => void;
+  createSandbox: () => void;
 }
 
-export const ShellContext = createContext<ShellState>({ me: undefined, meError: null, reloadMe: () => {}, org: null, createProject: () => {} });
+export const ShellContext = createContext<ShellState>({ me: undefined, meError: null, reloadMe: () => {}, org: null, createProject: () => {}, createSandbox: () => {} });
 
 export function useShell(): ShellState {
   return useContext(ShellContext);
@@ -173,7 +175,7 @@ export function OrgSwitcher() {
 }
 
 function CreateMenu() {
-  const { org, createProject } = useShell();
+  const { org, createProject, createSandbox } = useShell();
   return (
     <Dropdown
       buttonClass="create-button"
@@ -184,24 +186,44 @@ function CreateMenu() {
       }
     >
       {(close) => (
-        <button
-          type="button"
-          role="menuitem"
-          className="menu-item rich"
-          disabled={org === null}
-          onClick={() => {
-            close();
-            createProject();
-          }}
-        >
-          <IconSquare>
-            <RocketIcon />
-          </IconSquare>
-          <span>
-            <strong>New project</strong>
-            <span className="muted small">Chat with aho and deploy</span>
-          </span>
-        </button>
+        <>
+          <button
+            type="button"
+            role="menuitem"
+            className="menu-item rich"
+            disabled={org === null}
+            onClick={() => {
+              close();
+              createProject();
+            }}
+          >
+            <IconSquare>
+              <RocketIcon />
+            </IconSquare>
+            <span>
+              <strong>New project</strong>
+              <span className="muted small">Chat with aho and deploy</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="menu-item rich"
+            disabled={org === null}
+            onClick={() => {
+              close();
+              createSandbox();
+            }}
+          >
+            <IconSquare>
+              <SandboxIcon />
+            </IconSquare>
+            <span>
+              <strong>New sandbox</strong>
+              <span className="muted small">A VM with aho, for coding without deploying</span>
+            </span>
+          </button>
+        </>
       )}
     </Dropdown>
   );
@@ -212,6 +234,7 @@ function Sidebar() {
   const location = useLocation();
   const base = org === null ? null : `/orgs/${encodeURIComponent(org)}`;
   const inProject = location.pathname.startsWith("/projects/");
+  const inSandbox = location.pathname.startsWith("/sandboxes/");
   return (
     <aside className="sidebar">
       <div className="side-label">Organization</div>
@@ -225,6 +248,12 @@ function Sidebar() {
               <ProjectsIcon />
             </IconSquare>
             Projects
+          </NavLink>
+          <NavLink to={`${base}/sandboxes`} className={({ isActive }) => `side-link${isActive || inSandbox ? " active" : ""}`}>
+            <IconSquare>
+              <SandboxIcon />
+            </IconSquare>
+            Sandboxes
           </NavLink>
           <div className="side-section">Organization</div>
           <NavLink to={`${base}/team`} className={({ isActive }) => `side-link${isActive ? " active" : ""}`}>
@@ -248,9 +277,9 @@ function Sidebar() {
 export function Shell() {
   const me = useLoad(() => api.me(), []);
   const remembered = useCurrentOrg();
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState<"project" | "sandbox" | null>(null);
   const org = remembered ?? me.data?.orgs[0]?.org ?? null;
-  const state: ShellState = { me: me.data, meError: me.error, reloadMe: me.reload, org, createProject: () => setCreating(true) };
+  const state: ShellState = { me: me.data, meError: me.error, reloadMe: me.reload, org, createProject: () => setCreating("project"), createSandbox: () => setCreating("sandbox") };
   return (
     <ShellContext.Provider value={state}>
       <header className="topbar">
@@ -265,7 +294,8 @@ export function Shell() {
           <Outlet />
         </main>
       </div>
-      {creating && org !== null && <CreateProjectModal org={org} onClose={() => setCreating(false)} />}
+      {creating === "project" && org !== null && <CreateProjectModal org={org} onClose={() => setCreating(null)} />}
+      {creating === "sandbox" && org !== null && <CreateSandboxModal org={org} onClose={() => setCreating(null)} />}
     </ShellContext.Provider>
   );
 }

@@ -8,6 +8,8 @@ import { OrgPage } from "./pages/OrgPage";
 import { PolicyPage } from "./pages/PolicyPage";
 import { ProjectPage } from "./pages/ProjectPage";
 import { ReleasePage } from "./pages/ReleasePage";
+import { SandboxesPage } from "./pages/SandboxesPage";
+import { SandboxPage } from "./pages/SandboxPage";
 import { TeamPage } from "./pages/TeamPage";
 
 /** Signed-out visitors go to the login page and come back afterwards. */
@@ -34,8 +36,10 @@ export function App() {
           <Route path="/orgs/:org" element={<OrgPage />} />
           <Route path="/orgs/:org/team" element={<TeamPage />} />
           <Route path="/orgs/:org/policy" element={<PolicyPage />} />
+          <Route path="/orgs/:org/sandboxes" element={<SandboxesPage />} />
           <Route path="/projects/:p" element={<ProjectPage />} />
           <Route path="/projects/:p/releases/:r" element={<ReleasePage />} />
+          <Route path="/sandboxes/:s" element={<SandboxPage />} />
           <Route path="*" element={<p className="muted">Not found.</p>} />
         </Route>
       </Route>

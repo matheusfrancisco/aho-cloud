@@ -48,8 +48,8 @@ pub struct ImageStoreConfig {
     /// Cache directory: one subdirectory per digest.
     pub dir: PathBuf,
     pub programs: ImagePrograms,
-    /// Registry repository per project; `{project}` is substituted, e.g.
-    /// `registry.internal:5000/aho-cloud/{project}`.
+    /// Registry repository template; `{project}` is substituted with the replica's repo (the
+    /// project, or a sandbox image repo), e.g. `registry.internal:5000/aho-cloud/{project}`.
     pub repo_template: String,
     /// The `cloud-guest` binary copied into every rootfs.
     pub guest_binary: PathBuf,
@@ -70,14 +70,14 @@ pub fn digest_hex(digest: &str) -> Result<&str, ImageError> {
     }
 }
 
-/// `<repo>@<digest>`: the project's repository, pinned by digest.
-pub fn pinned_ref(repo_template: &str, project: &str, digest: &str) -> String {
-    format!("{}@{digest}", repo_template.replace("{project}", project))
+/// `<repo>@<digest>`: the repository (`{project}` in the template = `repo`), pinned by digest.
+pub fn pinned_ref(repo_template: &str, repo: &str, digest: &str) -> String {
+    format!("{}@{digest}", repo_template.replace("{project}", repo))
 }
 
 /// `docker://<repo>@<digest>` for skopeo.
-pub fn image_ref(repo_template: &str, project: &str, digest: &str) -> String {
-    format!("docker://{}", pinned_ref(repo_template, project, digest))
+pub fn image_ref(repo_template: &str, repo: &str, digest: &str) -> String {
+    format!("docker://{}", pinned_ref(repo_template, repo, digest))
 }
 
 pub struct ImageStore {
@@ -90,9 +90,9 @@ impl ImageStore {
         ImageStore { cfg, locks: Mutex::new(HashMap::new()) }
     }
 
-    /// Pulls and unpacks `digest` unless cached; concurrent callers for one digest wait for
-    /// the first.
-    pub async fn prepare(&self, project: &str, digest: &str) -> Result<PreparedImage, ImageError> {
+    /// Pulls and unpacks `digest` from `repo` unless cached; concurrent callers for one digest
+    /// wait for the first.
+    pub async fn prepare(&self, repo: &str, digest: &str) -> Result<PreparedImage, ImageError> {
         let hex = digest_hex(digest)?.to_owned();
         let lock = self.locks.lock().entry(hex.clone()).or_default().clone();
         let _guard = lock.lock().await;
@@ -110,7 +110,7 @@ impl ImageStore {
                 }
                 tokio::fs::create_dir_all(&dir).await.map_err(io_err(&dir))?;
                 let layout = dir.join("layout");
-                let source = image_ref(&self.cfg.repo_template, project, digest);
+                let source = image_ref(&self.cfg.repo_template, repo, digest);
                 let dest = format!("oci:{}:{LAYOUT_TAG}", layout.display());
                 run(&self.cfg.programs.skopeo, ["copy", source.as_str(), dest.as_str()]).await?;
                 let image = format!("{}:{LAYOUT_TAG}", layout.display());

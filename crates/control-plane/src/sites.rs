@@ -1,11 +1,13 @@
 //! `GET /internal/v1/sites`: everything the edge serves, derived from verified domain bindings,
-//! active releases, runtime status, each release's `edge.toml`, and auth secrets. Versioned: a
-//! persisted index remembers each hostname's content hash, so `?since=v` returns only what
-//! changed after `v`, and a hostname that stops being served comes back once as `tombstoned`.
+//! active releases, runtime status, each release's `edge.toml`, auth secrets, and the public
+//! ports of running sandboxes. Versioned: a persisted index remembers each hostname's content
+//! hash, so `?since=v` returns only what changed after `v`, and a hostname that stops being
+//! served comes back once as `tombstoned`.
 
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 
+use cloud_api::SandboxState;
 use cloud_api::internal::{RunState, Site, SiteState, Sites};
 use cloud_contract::edge::EdgeConfig;
 use cloud_contract::ledger::Stage;
@@ -16,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::AppError;
 use crate::ops::ledger_state;
 use crate::state::AppState;
-use crate::store::ProjectRec;
+use crate::store::{ProjectRec, SandboxRec};
 
 /// Secret whose per-stage value is the shared edge password (`auth.mode = password`).
 pub const EDGE_PASSWORD: &str = "EDGE_PASSWORD";
@@ -112,18 +114,7 @@ async fn site(
         .filter(|(k, _)| k.starts_with(EDGE_BEARER_TOKEN_PREFIX))
         .map(|(_, v)| blake3::hash(v.as_bytes()).to_hex().to_string())
         .collect();
-    let allowed_emails = if stage == Stage::Live {
-        Vec::new()
-    } else {
-        let mut emails = Vec::new();
-        for m in state.store.members(&project.org).await? {
-            if let Some(u) = state.store.user(&m.user_id).await? {
-                emails.push(u.email);
-            }
-        }
-        emails.sort();
-        emails
-    };
+    let allowed_emails = if stage == Stage::Live { Vec::new() } else { member_emails(state, &project.org).await? };
     Ok(Some(Site {
         hostname: hostname.to_owned(),
         project: project.slug.clone(),
@@ -137,6 +128,47 @@ async fn site(
         verifier_secrets,
         service_token_hashes,
         allowed_emails,
+    }))
+}
+
+/// Every member's email, sorted: who may pass a preview's (or sandbox's) edge sign-in.
+async fn member_emails(state: &AppState, org: &str) -> Result<Vec<String>, AppError> {
+    let mut emails = Vec::new();
+    for m in state.store.members(org).await? {
+        if let Some(u) = state.store.user(&m.user_id).await? {
+            emails.push(u.email);
+        }
+    }
+    emails.sort();
+    Ok(emails)
+}
+
+/// The public port of `sandbox` at `<slug>.<preview domain>`, while the runtime reports an
+/// address for it: behind the edge's email sign-in, open to the org's members only.
+async fn sandbox_site(state: &AppState, sandbox: &SandboxRec) -> Result<Option<Site>, AppError> {
+    if sandbox.settings.port.is_none() || sandbox.state == SandboxState::Stopped {
+        return Ok(None);
+    }
+    let Some(status) = state.services.runtime.sandbox_status(&sandbox.slug).await? else {
+        return Ok(None);
+    };
+    let Some(address) = status.address.filter(|_| status.state == SandboxState::Running) else {
+        return Ok(None);
+    };
+    Ok(Some(Site {
+        hostname: state.cfg.preview_host(&sandbox.slug),
+        project: sandbox.slug.clone(),
+        // Preview: the edge applies `allowed_emails` below Live only.
+        stage: Stage::Preview,
+        state: SiteState::Active,
+        upstreams: vec![address],
+        edge: EdgeConfig::default(),
+        auth: Auth::MagicLink { allowed_domains: Vec::new() },
+        password_hash: None,
+        oidc_client_secret: None,
+        verifier_secrets: BTreeMap::new(),
+        service_token_hashes: Vec::new(),
+        allowed_emails: member_emails(state, &sandbox.org).await?,
     }))
 }
 
@@ -199,6 +231,13 @@ pub async fn current(state: &AppState) -> Result<BTreeMap<String, Site>, AppErro
             && let Some(site) = site(state, p, Stage::Preview, release, &host, &ledger).await?
         {
             out.insert(host, site);
+        }
+    }
+    for sandbox in state.store.sandboxes().await? {
+        if let Some(site) = sandbox_site(state, &sandbox).await?
+            && let Entry::Vacant(e) = out.entry(site.hostname.clone())
+        {
+            e.insert(site);
         }
     }
     Ok(out)

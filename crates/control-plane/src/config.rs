@@ -42,6 +42,30 @@ impl fmt::Debug for MasterKey {
     }
 }
 
+/// The image sandboxes boot: `<repo>@sha256:<64 hex>`, `repo` relative to the runtime's
+/// image-repo template (normally [`cloud_api::internal::SANDBOX_IMAGE_REPO`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SandboxImage {
+    pub repo: String,
+    /// `sha256:<hex>`.
+    pub digest: String,
+}
+
+impl SandboxImage {
+    pub fn parse(text: &str) -> Option<Self> {
+        let (repo, digest) = text.trim().split_once('@')?;
+        let hex = digest.strip_prefix("sha256:")?;
+        let repo_ok = !repo.is_empty() && repo.bytes().all(|b| b.is_ascii_graphic() && b != b'@');
+        let hex_ok = hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+        (repo_ok && hex_ok).then(|| Self { repo: repo.to_owned(), digest: digest.to_owned() })
+    }
+
+    /// `<repo>@sha256:<hex>`.
+    pub fn reference(&self) -> String {
+        format!("{}@{}", self.repo, self.digest)
+    }
+}
+
 /// Server configuration.
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -68,6 +92,17 @@ pub struct Config {
     pub max_standing_ttl_secs: u64,
     /// Largest accepted archive or session-log upload.
     pub max_upload_bytes: usize,
+    /// Preview URL template (`{project}` = slug), as the session host is configured with; `None`
+    /// means `https://<slug>.<preview_domain>`.
+    pub preview_url: Option<String>,
+    /// What sandboxes boot; `None` turns creating and starting them off (503
+    /// `sandboxes_disabled`).
+    pub sandbox_image: Option<SandboxImage>,
+    /// Size of each new sandbox.
+    pub sandbox_cpus: u8,
+    pub sandbox_mem_mib: u32,
+    pub sandbox_disk_mib: u32,
+    pub max_sandboxes_per_org: usize,
 }
 
 impl Config {
@@ -91,6 +126,12 @@ impl Config {
             ceremony_ttl_secs: 300,
             max_standing_ttl_secs: 90 * 24 * 3600,
             max_upload_bytes: 256 * 1024 * 1024,
+            preview_url: None,
+            sandbox_image: None,
+            sandbox_cpus: 2,
+            sandbox_mem_mib: 2048,
+            sandbox_disk_mib: 10240,
+            max_sandboxes_per_org: 5,
         }
     }
 
@@ -102,5 +143,13 @@ impl Config {
     /// Preview hostname of a project.
     pub fn preview_host(&self, project: &str) -> String {
         format!("{project}.{}", self.preview_domain.trim_matches('.')).to_ascii_lowercase()
+    }
+
+    /// Preview URL of a project or sandbox.
+    pub fn preview_url(&self, slug: &str) -> String {
+        match &self.preview_url {
+            Some(template) => cloud_api::routes::fill(template, &[("project", slug)]),
+            None => format!("https://{}", self.preview_host(slug)),
+        }
     }
 }

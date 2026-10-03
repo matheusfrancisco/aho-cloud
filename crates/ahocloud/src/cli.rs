@@ -1,4 +1,5 @@
-//! Command line. Secret values are never flags or arguments: `secrets set` reads stdin.
+//! Command line. Secret values are never flags or arguments: `secrets set` and `sandbox env set`
+//! read stdin.
 
 use std::path::PathBuf;
 
@@ -74,6 +75,116 @@ pub enum Command {
     Secrets(SecretsCmd),
     #[command(subcommand)]
     StandingOrders(StandingOrdersCmd),
+    /// Long-lived VMs with aho installed and a persistent `/workspace`.
+    #[command(subcommand)]
+    Sandbox(SandboxCmd),
+    /// A terminal in a sandbox: a login shell, or COMMAND (exits with its status). Gets a PTY when
+    /// stdin is a terminal; otherwise plain pipes, so output is byte-faithful.
+    Ssh {
+        sandbox: String,
+        /// Force a PTY even when stdin is not a terminal.
+        #[arg(short = 't', long = "pty", conflicts_with = "no_pty")]
+        pty: bool,
+        /// Disable the PTY: plain stdin, stdout and stderr pipes.
+        #[arg(short = 'T', long = "no-pty")]
+        no_pty: bool,
+        #[arg(last = true)]
+        command: Vec<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SandboxCmd {
+    /// Create and boot a sandbox.
+    Create {
+        slug: String,
+        /// Org to create it in [default: your only org].
+        #[arg(long)]
+        org: Option<String>,
+        /// Port inside the VM served at https://<slug>.<preview domain>, to org members only.
+        #[arg(long)]
+        port: Option<u16>,
+        /// A host the VM may reach (repeat; `*.example.com` wildcards) [default: model providers,
+        /// package registries, git hosting].
+        #[arg(long = "egress", value_name = "HOST")]
+        egress: Vec<String>,
+        /// Stop the VM this long after each start (its disk is kept) [default: 8].
+        #[arg(long)]
+        auto_stop_hours: Option<u16>,
+    },
+    /// The sandboxes of an org.
+    #[command(alias = "list")]
+    Ls {
+        /// [default: your only org]
+        #[arg(long)]
+        org: Option<String>,
+    },
+    /// Boot a stopped sandbox with its disk and env.
+    Start { slug: String },
+    /// Stop the VM, keep the disk.
+    Stop { slug: String },
+    /// Destroy a sandbox and its disk.
+    Rm {
+        slug: String,
+        /// Do not ask for confirmation.
+        #[arg(long, short)]
+        yes: bool,
+    },
+    /// Show the settings, or change them (a running sandbox restarts with them).
+    Settings(SettingsArgs),
+    #[command(subcommand)]
+    Env(EnvCmd),
+}
+
+#[derive(Args, Debug)]
+pub struct SettingsArgs {
+    pub slug: String,
+    /// Serve this port inside the VM at the sandbox URL.
+    #[arg(long, conflicts_with = "no_port")]
+    pub port: Option<u16>,
+    /// Stop serving a port.
+    #[arg(long)]
+    pub no_port: bool,
+    /// Replace the egress allowlist (repeat).
+    #[arg(long = "egress", value_name = "HOST", conflicts_with_all = ["allow", "deny"])]
+    pub egress: Vec<String>,
+    /// Add a host to the egress allowlist (repeat).
+    #[arg(long, value_name = "HOST")]
+    pub allow: Vec<String>,
+    /// Remove a host from the egress allowlist (repeat).
+    #[arg(long, value_name = "HOST")]
+    pub deny: Vec<String>,
+    #[arg(long)]
+    pub auto_stop_hours: Option<u16>,
+}
+
+impl SettingsArgs {
+    pub fn changes_anything(&self) -> bool {
+        self.port.is_some()
+            || self.no_port
+            || !self.egress.is_empty()
+            || !self.allow.is_empty()
+            || !self.deny.is_empty()
+            || self.auto_stop_hours.is_some()
+    }
+}
+
+#[derive(Subcommand, Debug)]
+pub enum EnvCmd {
+    /// Set a variable; it reaches the VM at its next start. The value is read from stdin, never
+    /// from arguments.
+    Set {
+        slug: String,
+        name: String,
+    },
+    #[command(alias = "list")]
+    Ls {
+        slug: String,
+    },
+    Rm {
+        slug: String,
+        name: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -236,5 +347,7 @@ mod tests {
     fn secret_values_have_no_argument() {
         assert!(Cli::try_parse_from(["ahocloud", "secrets", "set", "K", "--stage", "live", "value"]).is_err());
         assert!(Cli::try_parse_from(["ahocloud", "secrets", "set", "K", "--stage", "live"]).is_ok());
+        assert!(Cli::try_parse_from(["ahocloud", "sandbox", "env", "set", "box", "K", "value"]).is_err());
+        assert!(Cli::try_parse_from(["ahocloud", "sandbox", "env", "set", "box", "K"]).is_ok());
     }
 }

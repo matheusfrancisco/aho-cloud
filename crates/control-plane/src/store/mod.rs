@@ -1,5 +1,6 @@
 //! Durable state that is not a ledger: identities, credentials, orgs, projects, encrypted
-//! secrets, upload indexes. Bearer tokens and device codes are stored as blake3 hashes only.
+//! secrets, upload indexes, sandboxes and their encrypted environment. Bearer tokens and device
+//! codes are stored as blake3 hashes only.
 //!
 //! Two implementations: [`MemStore`] (tests, local runs) and [`PgStore`] (Postgres).
 
@@ -7,6 +8,7 @@ mod mem;
 mod pg;
 
 use async_trait::async_trait;
+use cloud_api::{SandboxSettings, SandboxState};
 use cloud_contract::ledger::{Approver, Stage};
 use cloud_contract::policy::ReleasePolicy;
 use serde::{Deserialize, Serialize};
@@ -19,6 +21,9 @@ pub enum StoreError {
     /// A uniqueness rule refused the write; the payload names what already exists.
     #[error("{0} already exists")]
     Conflict(String),
+    /// A per-org limit refused the write; the payload says which.
+    #[error("{0}")]
+    Limit(String),
     #[error("store: {0}")]
     Backend(String),
 }
@@ -218,6 +223,63 @@ pub struct ReleaseMeta {
     pub created_at: u64,
 }
 
+/// A sandbox: a VM with its own disk, owned by an org. Its slug shares one namespace with
+/// project slugs (deleted projects included).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SandboxRec {
+    pub slug: String,
+    pub org: String,
+    /// User id.
+    pub created_by: String,
+    pub created_at: u64,
+    /// `<repo>@sha256:<hex>` it boots from.
+    pub image: String,
+    pub settings: SandboxSettings,
+    /// As the runtime last reported it.
+    pub state: SandboxState,
+    pub error: Option<String>,
+    /// When the running VM is stopped.
+    pub stops_at: Option<u64>,
+    pub cpus: u8,
+    pub mem_mib: u32,
+    pub disk_mib: u32,
+}
+
+/// One environment variable of a sandbox, sealed with [`crate::crypto::SecretBox::seal_env`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EnvVarRec {
+    pub sandbox: String,
+    pub name: String,
+    pub ciphertext: Vec<u8>,
+    pub fingerprint: String,
+    pub updated_at: u64,
+}
+
+/// The stored spelling of a [`SandboxState`] (its JSON form).
+pub fn sandbox_state_str(state: SandboxState) -> &'static str {
+    match state {
+        SandboxState::Starting => "starting",
+        SandboxState::Running => "running",
+        SandboxState::Stopped => "stopped",
+        SandboxState::Failed => "failed",
+    }
+}
+
+pub fn parse_sandbox_state(s: &str) -> Option<SandboxState> {
+    match s {
+        "starting" => Some(SandboxState::Starting),
+        "running" => Some(SandboxState::Running),
+        "stopped" => Some(SandboxState::Stopped),
+        "failed" => Some(SandboxState::Failed),
+        _ => None,
+    }
+}
+
+/// What [`StoreError::Limit`] says when `org` already has `max` sandboxes.
+fn limit_message(org: &str, max: usize) -> String {
+    format!("org {org} already has the most sandboxes it may have ({max}); delete one first")
+}
+
 /// The storage port. Every method is a single atomic step.
 #[async_trait]
 pub trait Store: Send + Sync {
@@ -263,7 +325,7 @@ pub trait Store: Send + Sync {
     async fn members(&self, org: &str) -> Result<Vec<MemberRec>, StoreError>;
     async fn memberships(&self, user_id: &str) -> Result<Vec<MemberRec>, StoreError>;
 
-    /// Conflict when the slug was ever used.
+    /// Conflict when the slug was ever used by a project, or is a sandbox's.
     async fn create_project(&self, project: &ProjectRec) -> Result<(), StoreError>;
     /// Includes deleted projects.
     async fn project(&self, slug: &str) -> Result<Option<ProjectRec>, StoreError>;
@@ -287,6 +349,25 @@ pub trait Store: Send + Sync {
     /// Inserts or replaces.
     async fn put_release_meta(&self, meta: &ReleaseMeta) -> Result<(), StoreError>;
     async fn release_meta(&self, project: &str, release: &str) -> Result<Option<ReleaseMeta>, StoreError>;
+
+    /// Conflict when the slug is a sandbox's or was ever a project's; [`StoreError::Limit`] when
+    /// the org already has `max_per_org` sandboxes.
+    async fn create_sandbox(&self, sandbox: &SandboxRec, max_per_org: usize) -> Result<(), StoreError>;
+    async fn sandbox(&self, slug: &str) -> Result<Option<SandboxRec>, StoreError>;
+    /// Ordered by slug.
+    async fn org_sandboxes(&self, org: &str) -> Result<Vec<SandboxRec>, StoreError>;
+    /// Every sandbox, ordered by slug.
+    async fn sandboxes(&self) -> Result<Vec<SandboxRec>, StoreError>;
+    /// Replaces an existing sandbox's record; a deleted one stays deleted.
+    async fn update_sandbox(&self, sandbox: &SandboxRec) -> Result<(), StoreError>;
+    /// Removes the sandbox and its environment.
+    async fn delete_sandbox(&self, slug: &str) -> Result<(), StoreError>;
+    /// Inserts or replaces `(sandbox, name)`.
+    async fn put_sandbox_env(&self, var: &EnvVarRec) -> Result<(), StoreError>;
+    /// Ordered by name.
+    async fn sandbox_env(&self, sandbox: &str) -> Result<Vec<EnvVarRec>, StoreError>;
+    /// `false` when there was no such variable.
+    async fn delete_sandbox_env(&self, sandbox: &str, name: &str) -> Result<bool, StoreError>;
 
     /// Small documents (sealed registry snapshot, sites index).
     async fn kv_get(&self, key: &str) -> Result<Option<String>, StoreError>;

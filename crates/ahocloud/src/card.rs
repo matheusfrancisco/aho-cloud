@@ -1,9 +1,9 @@
 //! Text renderings: the approval card (what a release widens and narrows, and what approving it
-//! takes), release lists, refusals, drafted fields.
+//! takes), release lists, refusals, drafted fields, sandboxes.
 
 use std::fmt::Write;
 
-use cloud_api::{CheckResult, DomainView, Release};
+use cloud_api::{CheckResult, DomainView, Release, Sandbox};
 use cloud_contract::diff::{Direction, SurfaceDiff};
 use cloud_contract::ledger::Provenance;
 use cloud_contract::policy::Requirement;
@@ -115,6 +115,39 @@ pub fn domain(d: &DomainView) -> String {
     let mut out = format!("{}  {state}  ({mode})\n", d.hostname);
     for r in &d.records {
         let _ = writeln!(out, "  {:<5} {}  {}", r.kind, r.name, r.value);
+    }
+    out
+}
+
+fn sandbox_state(s: &Sandbox) -> String {
+    serde_json::to_value(s.state).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default()
+}
+
+pub fn sandbox_row(s: &Sandbox) -> String {
+    format!("{}  {}  {}  {}", s.slug, sandbox_state(s), s.org, s.url.as_deref().unwrap_or("-"))
+}
+
+/// One sandbox, `now` in Unix seconds (for when it stops).
+pub fn sandbox(s: &Sandbox, now: u64) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "sandbox {} · org {} · {}", s.slug, s.org, sandbox_state(s));
+    let _ = writeln!(out, "image {} · {} cpus · {} MiB memory · {} MiB disk", s.image, s.cpus, s.mem_mib, s.disk_mib);
+    let _ = writeln!(out, "egress {}", if s.settings.egress.is_empty() { "(none)".into() } else { s.settings.egress.join(", ") });
+    match (s.settings.port, &s.url) {
+        (Some(port), Some(url)) => _ = writeln!(out, "port {port} at {url} (org members only)"),
+        (Some(port), None) => _ = writeln!(out, "port {port}"),
+        (None, _) => _ = writeln!(out, "no public port"),
+    }
+    let _ = write!(out, "auto-stop {}h after each start", s.settings.auto_stop_hours);
+    match s.stops_at {
+        Some(at) => {
+            let left = at.saturating_sub(now);
+            let _ = writeln!(out, "; stops in {}h {:02}m", left / 3600, left % 3600 / 60);
+        }
+        None => out.push('\n'),
+    }
+    if let Some(e) = &s.error {
+        let _ = writeln!(out, "failed: {e}");
     }
     out
 }

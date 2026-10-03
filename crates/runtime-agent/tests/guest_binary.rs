@@ -1,15 +1,19 @@
 //! The `cloud-guest` binary outside a VM (not PID 1): config drive in, process running,
-//! control protocol on a Unix socket, clean stop on SIGINT.
+//! control protocol on a Unix socket, clean stop on SIGINT; and its `exec`, `files` and `file`
+//! subcommands as the host runs them inside guests.
 // Helpers outside `#[test]` fns are test code too.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::process::Stdio;
 use std::time::Duration;
 
-use cloud_contract::manifest::Health;
+use cloud_api::exec::{ExecRequest, Frame};
+use cloud_api::{FileContent, FileTree};
 use cloud_runtime::guest::control::{Client, ProcessState};
-use cloud_runtime::guest::{GuestConfig, ImageConfig};
+use cloud_runtime::guest::exec::{read_frame, write_frame};
+use cloud_runtime::guest::{EXIT_BAD_PATH, EXIT_NOT_FOUND, GuestConfig, ImageConfig};
 use nix::errno::Errno;
 use nix::sys::signal::{Signal, kill};
 use nix::unistd::Pid;
@@ -48,7 +52,6 @@ async fn runs_the_configured_process_and_serves_control() {
         },
         env: BTreeMap::from([("GREETING".into(), "hello".into()), ("SECRET".into(), "s3".into())]),
         port: None,
-        health: Health::Command { argv: vec!["true".into()] },
         volume: None,
         dns: vec![],
     };
@@ -96,4 +99,83 @@ async fn runs_the_configured_process_and_serves_control() {
     let status = tokio::time::timeout(Duration::from_secs(10), guest.wait()).await.unwrap().unwrap();
     assert!(status.success(), "{status}");
     assert_eq!(kill(app, None), Err(Errno::ESRCH), "the app outlived its init");
+}
+
+const GUEST: &str = env!("CARGO_BIN_EXE_cloud-guest");
+
+#[tokio::test]
+async fn exec_serves_one_session_on_stdin_and_stdout_with_its_own_environment() {
+    let mut guest = tokio::process::Command::new(GUEST)
+        .arg("exec")
+        .env("GUEST_ONLY", "from-the-guest")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut to_guest = guest.stdin.take().unwrap();
+    let mut from_guest = guest.stdout.take().unwrap();
+    let request = ExecRequest {
+        argv: vec!["sh".into(), "-c".into(), "echo \"$GUEST_ONLY $ADDED\"; cat; exit 5".into()],
+        pty: None,
+        env: BTreeMap::from([("ADDED".into(), "by-the-request".into())]),
+        cwd: None,
+    };
+    write_frame(&mut to_guest, &Frame::Request(request)).await.unwrap();
+    write_frame(&mut to_guest, &Frame::Stdin(b"piped in\n".to_vec())).await.unwrap();
+    write_frame(&mut to_guest, &Frame::CloseStdin).await.unwrap();
+    let mut stdout = Vec::new();
+    let code = loop {
+        match read_frame(&mut from_guest).await.unwrap().unwrap() {
+            Frame::Stdout(b) => stdout.extend(b),
+            Frame::Exit(code) => break code,
+            other => panic!("{other:?}"),
+        }
+    };
+    assert_eq!(String::from_utf8(stdout).unwrap(), "from-the-guest by-the-request\npiped in\n");
+    assert_eq!(code, 5);
+    assert_eq!(read_frame(&mut from_guest).await.unwrap(), None, "the session is over");
+    let status = tokio::time::timeout(Duration::from_secs(10), guest.wait()).await.unwrap().unwrap();
+    assert!(status.success(), "{status}");
+}
+
+fn workspace() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::create_dir_all(dir.path().join(".git")).unwrap();
+    std::fs::write(dir.path().join("src/main.rs"), "fn main() {}").unwrap();
+    std::fs::write(dir.path().join(".git/HEAD"), "ref: x").unwrap();
+    dir
+}
+
+async fn guest(args: &[&str]) -> (i32, String, String) {
+    let out = tokio::process::Command::new(GUEST).args(args).output().await.unwrap();
+    (out.status.code().unwrap(), String::from_utf8(out.stdout).unwrap(), String::from_utf8(out.stderr).unwrap())
+}
+
+#[tokio::test]
+async fn files_and_file_print_the_workspace_as_json_and_classify_refusals() {
+    let ws = workspace();
+    let root = ws.path().to_str().unwrap();
+    let (code, out, _) = guest(&["files", "--root", root]).await;
+    assert_eq!(code, 0);
+    let tree: FileTree = serde_json::from_str(&out).unwrap();
+    let paths: Vec<&str> = tree.files.iter().map(|f| f.path.as_str()).collect();
+    assert_eq!(paths, ["src", "src/main.rs"], ".git is never listed");
+
+    let (code, out, _) = guest(&["file", "--root", root, "--path=src/main.rs"]).await;
+    assert_eq!(code, 0);
+    let file: FileContent = serde_json::from_str(&out).unwrap();
+    assert_eq!(file.text.as_deref(), Some("fn main() {}"));
+
+    for (path, want) in [
+        ("--path=../etc/passwd", EXIT_BAD_PATH),
+        ("--path=.git/HEAD", EXIT_BAD_PATH),
+        ("--path=nope.rs", EXIT_NOT_FOUND),
+        ("--path=--help", EXIT_NOT_FOUND),
+    ] {
+        let (code, out, err) = guest(&["file", "--root", root, path]).await;
+        assert_eq!(code, want, "{path}: {err}");
+        assert!(out.is_empty() && !err.trim().is_empty(), "{path}: errors go to stderr only");
+    }
 }

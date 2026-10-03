@@ -74,6 +74,11 @@ impl Person {
 
 impl H {
     pub async fn new() -> H {
+        H::with(|_| {}).await
+    }
+
+    /// Like [`H::new`], with `tweak` applied to the configuration first.
+    pub async fn with(tweak: impl FnOnce(&mut Config)) -> H {
         let dir = tempfile::tempdir().unwrap();
         let mut cfg = Config::new(MasterKey::new([42; 32]), SERVICE, RP_ID, ORIGIN);
         cfg.public_url = "http://control.test".into();
@@ -85,6 +90,7 @@ impl H {
         };
         cfg.preview_domain = "preview.aho.test".into();
         cfg.domain_grace_secs = 3600;
+        tweak(&mut cfg);
         let builder = Arc::new(FakeBuilder::new());
         let runtime = Arc::new(FakeRuntime::new());
         let host = Arc::new(FakeSessionHost::new());

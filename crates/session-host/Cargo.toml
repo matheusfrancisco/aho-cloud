@@ -1,6 +1,6 @@
 [package]
 name = "cloud-session-host"
-description = "Entry A: runs `ahoc` per workspace and bridges aho rpc (NDJSON over stdio) to a WebSocket."
+description = "Entry A: runs `ahoc` per workspace and bridges aho rpc (NDJSON over stdio) to a WebSocket; relays sandbox terminals and chats to the runtime agent."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -23,6 +23,8 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
+uuid.workspace = true
 hmac = "0.12"
 sha2 = "0.10"
 subtle = "2.6"
@@ -35,7 +37,6 @@ aho-types.workspace = true
 cloud-draft.workspace = true
 reqwest.workspace = true
 tempfile.workspace = true
-tokio-tungstenite = "0.29"
 tar = "0.4"
 flate2 = "1"
 

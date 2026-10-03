@@ -21,6 +21,9 @@ pub enum Error {
     /// The gate refused the manifest; the refusals were printed.
     #[error("the gate refuses this manifest")]
     Refused,
+    /// The terminal session failed: connecting, the socket, or the sandbox's `Error` frame.
+    #[error("terminal: {0}")]
+    Terminal(String),
 }
 
 impl Error {

@@ -1,6 +1,7 @@
 //! The same store contract against MemStore and, when `DATABASE_URL` is set, PgStore.
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code: a failed unwrap is a failed test")]
 
+use cloud_api::{SandboxSettings, SandboxState};
 use cloud_contract::ledger::{Approver, ProofMethod, Stage};
 use cloud_contract::policy::ReleasePolicy;
 use cloud_control_plane::store::*;
@@ -151,6 +152,69 @@ async fn contract(s: &dyn Store) {
     s.kv_put("k", "v2").await.unwrap();
     assert_eq!(s.kv_get("k").await.unwrap().as_deref(), Some("v2"));
     assert!(s.kv_get("missing").await.unwrap().is_none());
+
+    // Sandboxes: one slug namespace with projects (deleted ones too), a per-org limit, the
+    // environment replaced per name and gone with its sandbox.
+    let sandbox = SandboxRec {
+        slug: "dev".into(),
+        org: "acme".into(),
+        created_by: "u1".into(),
+        created_at: 5,
+        image: format!("aho.sandbox@sha256:{}", "c".repeat(64)),
+        settings: SandboxSettings { egress: vec!["*.example.com".into()], port: Some(3000), auto_stop_hours: 8 },
+        state: SandboxState::Starting,
+        error: None,
+        stops_at: Some(99),
+        cpus: 2,
+        mem_mib: 2048,
+        disk_mib: 10240,
+    };
+    s.create_sandbox(&sandbox, 2).await.unwrap();
+    assert_eq!(s.sandbox("dev").await.unwrap(), Some(sandbox.clone()));
+    assert!(matches!(s.create_sandbox(&sandbox, 2).await, Err(StoreError::Conflict(_))));
+    for taken in ["shop", "blog"] {
+        let clash = SandboxRec { slug: taken.into(), ..sandbox.clone() };
+        assert!(matches!(s.create_sandbox(&clash, 2).await, Err(StoreError::Conflict(_))), "project slug {taken}");
+    }
+    let project = ProjectRec { slug: "dev".into(), org: "acme".into(), created_at: 1, deleted_at: None };
+    assert!(matches!(s.create_project(&project).await, Err(StoreError::Conflict(_))), "a sandbox slug is not a project's");
+    s.create_sandbox(&SandboxRec { slug: "web".into(), ..sandbox.clone() }, 2).await.unwrap();
+    assert!(matches!(s.create_sandbox(&SandboxRec { slug: "api".into(), ..sandbox.clone() }, 2).await, Err(StoreError::Limit(_))));
+    assert!(s.sandbox("api").await.unwrap().is_none());
+    let org2 = OrgRec { slug: "beta".into(), name: "Beta".into(), policy: ReleasePolicy::default(), policy_approver: None };
+    s.create_org(&org2, "u2").await.unwrap();
+    s.create_sandbox(&SandboxRec { slug: "api".into(), org: "beta".into(), created_by: "u2".into(), ..sandbox.clone() }, 2).await.unwrap();
+    assert_eq!(s.org_sandboxes("acme").await.unwrap().iter().map(|x| x.slug.as_str()).collect::<Vec<_>>(), ["dev", "web"]);
+    assert_eq!(s.sandboxes().await.unwrap().iter().map(|x| x.slug.as_str()).collect::<Vec<_>>(), ["api", "dev", "web"]);
+
+    let running = SandboxRec {
+        state: SandboxState::Failed,
+        error: Some("oom".into()),
+        stops_at: None,
+        settings: SandboxSettings { egress: Vec::new(), port: None, auto_stop_hours: 1 },
+        image: format!("aho.sandbox@sha256:{}", "d".repeat(64)),
+        ..sandbox.clone()
+    };
+    s.update_sandbox(&running).await.unwrap();
+    assert_eq!(s.sandbox("dev").await.unwrap(), Some(running.clone()));
+    s.update_sandbox(&SandboxRec { slug: "ghost".into(), ..running.clone() }).await.unwrap();
+    assert!(s.sandbox("ghost").await.unwrap().is_none(), "an update never creates");
+
+    let var = EnvVarRec { sandbox: "dev".into(), name: "B_KEY".into(), ciphertext: vec![1, 2], fingerprint: "f1".into(), updated_at: 1 };
+    s.put_sandbox_env(&var).await.unwrap();
+    s.put_sandbox_env(&EnvVarRec { name: "A_KEY".into(), ..var.clone() }).await.unwrap();
+    s.put_sandbox_env(&EnvVarRec { ciphertext: vec![9], fingerprint: "f2".into(), ..var.clone() }).await.unwrap();
+    s.put_sandbox_env(&EnvVarRec { sandbox: "web".into(), ..var.clone() }).await.unwrap();
+    let env = s.sandbox_env("dev").await.unwrap();
+    assert_eq!(env.iter().map(|v| (v.name.as_str(), v.fingerprint.as_str())).collect::<Vec<_>>(), [("A_KEY", "f1"), ("B_KEY", "f2")]);
+    assert!(s.delete_sandbox_env("dev", "A_KEY").await.unwrap());
+    assert!(!s.delete_sandbox_env("dev", "A_KEY").await.unwrap());
+    s.delete_sandbox("dev").await.unwrap();
+    assert!(s.sandbox("dev").await.unwrap().is_none());
+    assert!(s.sandbox_env("dev").await.unwrap().is_empty(), "the environment goes with the sandbox");
+    assert_eq!(s.sandbox_env("web").await.unwrap().len(), 1);
+    s.create_sandbox(&sandbox, 2).await.unwrap();
+    assert!(s.sandbox_env("dev").await.unwrap().is_empty(), "a new sandbox of the same slug starts clean");
 }
 
 #[tokio::test]

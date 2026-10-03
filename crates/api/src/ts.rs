@@ -63,6 +63,18 @@ pub fn typescript() -> String {
         FileEntry,
         FileTree,
         FileContent,
+        CreateSandbox,
+        SandboxSettings,
+        SandboxState,
+        Sandbox,
+        TerminalRequest,
+        TerminalAccess,
+        StartSandboxChat,
+        SandboxChat,
+        SetEnvVar,
+        EnvVarView,
+        crate::exec::ExecRequest,
+        crate::exec::PtySize,
         LedgerEntry,
     );
     let contract = cloud_contract::ts::typescript();
@@ -118,6 +130,17 @@ fn routes_ts() -> String {
         WORKSPACE_DEPLOY,
         WORKSPACE_FILES,
         WORKSPACE_FILE,
+        ORG_SANDBOXES,
+        SANDBOX,
+        SANDBOX_START,
+        SANDBOX_STOP,
+        SANDBOX_TERMINAL,
+        SANDBOX_CHAT,
+        SANDBOX_FILES,
+        SANDBOX_FILE,
+        SANDBOX_SETTINGS,
+        SANDBOX_ENV,
+        SANDBOX_ENV_VAR,
     );
     out.push_str("} as const;\n\n");
     out.push_str(

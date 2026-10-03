@@ -7,37 +7,70 @@ use cloud_contract::ledger::Stage;
 use futures::future::BoxFuture;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use crate::guest::GuestConfig;
+use crate::guest::{GUEST_INIT_PATH, GuestConfig};
 use crate::net::Lease;
 
-/// A byte stream to a guest's control server.
+/// A byte stream to a guest's control or exec server.
 pub trait GuestStream: AsyncRead + AsyncWrite + Send + Unpin {}
 impl<T: AsyncRead + AsyncWrite + Send + Unpin> GuestStream for T {}
 
 pub type GuestConn = Box<dyn GuestStream>;
 
-/// A persistent disk that outlives replicas: the same `(project, stage, process, index)` gets
-/// the same volume across restarts and releases.
+/// Label keys the supervisor puts on replicas (Docker `--label`s).
+pub mod labels {
+    pub const PROJECT: &str = "aho-cloud.project";
+    pub const STAGE: &str = "aho-cloud.stage";
+    pub const PROCESS: &str = "aho-cloud.process";
+    pub const INDEX: &str = "aho-cloud.index";
+    pub const RELEASE: &str = "aho-cloud.release";
+    pub const SANDBOX: &str = "aho-cloud.sandbox";
+}
+
+/// Which persistent disk: the same id is the same disk across boots, releases and specs.
+/// Deployment and sandbox disks can never name each other.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DiskId {
+    /// One process slot of a deployment.
+    Process { project: String, stage: Stage, process: String, index: u16 },
+    /// A sandbox's workspace, by slug.
+    Sandbox(String),
+}
+
+/// A persistent disk that outlives replicas.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VolumeSpec {
+    pub disk: DiskId,
     pub size_mb: u32,
 }
 
 /// Everything needed to boot one replica.
 #[derive(Clone, Debug)]
 pub struct ReplicaSpec {
-    /// Unique per boot: `[a-z0-9-]`, at most 64 bytes (Firecracker `--id`, cgroup name).
+    /// Unique per boot: `[a-z0-9-]`, at most 64 bytes (Firecracker `--id`, cgroup name,
+    /// container name).
     pub id: String,
-    pub project: String,
-    pub stage: Stage,
-    pub process: String,
-    pub index: u16,
-    pub release: String,
+    /// Substituted for `{project}` in the image-repo template: the project of a deployment,
+    /// `SandboxSpec.image_repo` of a sandbox.
+    pub repo: String,
     pub image_digest: String,
+    /// The guest's hostname.
+    pub hostname: String,
+    /// What the replica belongs to, as `(key, value)` pairs (see [`labels`]).
+    pub labels: Vec<(String, String)>,
     pub lease: Lease,
     /// The config drive; the backend fills in `image` from the pulled image.
     pub guest: GuestConfig,
     pub volume: Option<VolumeSpec>,
+    /// vCPUs and memory instead of the backend's defaults.
+    pub cpus: Option<u8>,
+    pub mem_mib: Option<u32>,
+}
+
+impl ReplicaSpec {
+    /// The value of label `key`.
+    pub fn label(&self, key: &str) -> Option<&str> {
+        self.labels.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -79,8 +112,22 @@ pub trait Vmm: Send + Sync + 'static {
     /// Opens a control connection to the replica's `cloud-guest`.
     fn connect<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<GuestConn, VmmError>>;
 
+    /// Opens a fresh stream to the replica's exec server: one
+    /// [`crate::guest::exec`] session, ended by dropping the stream.
+    fn exec<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<GuestConn, VmmError>>;
+
+    /// Destroys a persistent disk; no replica may be using it. A disk that does not exist is
+    /// already destroyed.
+    fn destroy_volume<'a>(&'a self, disk: &'a DiskId) -> BoxFuture<'a, Result<(), VmmError>>;
+
     /// Where the host reaches `port` of the replica at `ip`.
     fn endpoint(&self, _id: &str, ip: Ipv4Addr, port: u16) -> SocketAddr {
         SocketAddr::new(ip.into(), port)
+    }
+
+    /// Path of `cloud-guest` inside this backend's guests (run by exec sessions for file
+    /// listings and reads).
+    fn guest_program(&self) -> &str {
+        GUEST_INIT_PATH
     }
 }

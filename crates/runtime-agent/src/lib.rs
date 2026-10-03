@@ -1,17 +1,18 @@
-//! The aho cloud runtime agent: runs approved deployments as Firecracker microVMs on a
-//! Linux/KVM host (or, for local development, as Docker containers), and `cloud-guest`, the
-//! PID 1 inside each VM.
+//! The aho cloud runtime agent: runs approved deployments and sandboxes as Firecracker
+//! microVMs on a Linux/KVM host (or, for local development, as Docker containers), and
+//! `cloud-guest`, the PID 1 inside each VM.
 //!
-//! - [`supervisor`]: desired state per (project, stage); reconcile, scale, restart,
-//!   maintenance, sleep, health checks;
+//! - [`supervisor`]: desired state per (project, stage) and per sandbox; reconcile, scale,
+//!   restart, maintenance, sleep, health checks, sandbox start/stop/removal;
 //! - [`vmm`]: the VM backend seam; [`firecracker`]: the real backend; [`docker`]: the local
 //!   development backend (no isolation boundary);
 //! - [`image`]: OCI image → ext4 rootfs via skopeo, umoci and mkfs.ext4;
 //! - [`net`]: guest addresses, MACs, taps and the nftables ruleset;
-//! - [`egress`]: the CONNECT proxy enforcing each deployment's egress allowlist;
+//! - [`egress`]: the CONNECT proxy enforcing each guest's egress allowlist;
 //! - [`cgroup`]: cgroup v2 ceilings per replica;
-//! - [`api`]: the internal HTTP API (`cloud_api::internal::routes::DEPLOYMENT*`);
-//! - [`guest`]: config drive, control protocol and process runner used by `cloud-guest`.
+//! - [`api`]: the internal HTTP API (`cloud_api::internal::routes::DEPLOYMENT*`, `SANDBOX*`);
+//! - [`guest`]: config drive, control protocol, exec server and process runner used by
+//!   `cloud-guest`.
 
 #![forbid(unsafe_code)]
 

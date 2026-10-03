@@ -1,4 +1,5 @@
-//! `cloud-session-host`: serves the internal workspace route and the rpc WebSocket bridge.
+//! `cloud-session-host`: serves the internal workspace and sandbox routes, the rpc WebSocket
+//! bridges and the sandbox terminal relay.
 
 #![forbid(unsafe_code)]
 
@@ -10,9 +11,10 @@ use std::time::Duration;
 
 use clap::Parser;
 use cloud_session_host::spawn::{SERVICE_TOKEN_ENV, SESSION_SECRET_ENV};
-use cloud_session_host::{CommandTemplate, Config, Limits, SessionHost, TokenKey, TokioSpawner};
+use cloud_session_host::{CommandTemplate, Config, Limits, SandboxConfig, SessionHost, TokenKey, TokioSpawner};
 
-/// Runs `ahoc` per workspace and bridges aho rpc (NDJSON over stdio) to WebSockets.
+/// Runs `ahoc` per workspace and bridges aho rpc (NDJSON over stdio) to WebSockets; relays
+/// sandbox terminals and chats to the runtime agent.
 // No `Debug`: the struct holds the service token and signing secret.
 #[derive(Parser)]
 #[command(name = "cloud-session-host", version)]
@@ -77,6 +79,13 @@ struct Cli {
     /// Most entries a workspace file tree lists.
     #[arg(long, default_value_t = Limits::DEFAULT.max_tree_entries)]
     max_tree_entries: usize,
+    /// The runtime agent's base URL (`http://…`), called with the service token. Without it the
+    /// sandbox routes answer 503 `sandboxes_disabled`.
+    #[arg(long, env = "AHO_CLOUD_RUNTIME_URL")]
+    runtime_url: Option<String>,
+    /// Program the sandbox chat runs inside the sandbox: `<program> --project /workspace rpc`.
+    #[arg(long, default_value = "aho")]
+    sandbox_chat_command: String,
 }
 
 impl Cli {
@@ -100,6 +109,7 @@ impl Cli {
                 max_file_bytes: self.max_file_bytes,
                 max_tree_entries: self.max_tree_entries,
             },
+            sandbox: SandboxConfig { runtime_url: self.runtime_url, chat_command: self.sandbox_chat_command, ..SandboxConfig::default() },
         })
     }
 }

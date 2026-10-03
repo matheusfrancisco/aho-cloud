@@ -11,8 +11,10 @@ import type {
   CheckResult,
   CreateOrg,
   CreateProject,
+  CreateSandbox,
   DeviceApprove,
   DomainView,
+  EnvVarView,
   FileContent,
   FileTree,
   GrantStandingOrders,
@@ -30,15 +32,25 @@ import type {
   Reject,
   Release,
   Rollback,
+  Sandbox,
+  SandboxChat,
+  SandboxSettings,
   Session,
   SessionUploaded,
   SecretView,
+  SetEnvVar,
   SetSecret,
+  StartSandboxChat,
+  TerminalAccess,
+  TerminalRequest,
   Workspace,
   WorkspaceDeployed,
 } from "../gen/api";
 import type { Manifest, Refusal, ReleasePolicy } from "../gen/contract";
 import { currentToken, signOut } from "./session";
+
+/** Where aho works: a project's workspace, or a sandbox's `/workspace`. */
+export type AhoTarget = { kind: "project"; project: string } | { kind: "sandbox"; sandbox: string };
 
 /** A failed API call: the server's `ApiError` body, or a transport failure described the same way. */
 export class ApiError extends Error {
@@ -249,6 +261,58 @@ export class Api {
   }
   workspaceFile(p: string, path: string) {
     return this.request<FileContent>("GET", `${fill(routes.WORKSPACE_FILE, { p })}?path=${encodeURIComponent(path)}`);
+  }
+
+  // ---- sandboxes (`{s}` = sandbox slug; every member of its org may use it)
+  sandboxes(org: string) {
+    return this.request<Sandbox[]>("GET", fill(routes.ORG_SANDBOXES, { org }));
+  }
+  /** Boots it at once; it answers `starting`. */
+  createSandbox(org: string, body: CreateSandbox) {
+    return this.request<Sandbox>("POST", fill(routes.ORG_SANDBOXES, { org }), body);
+  }
+  sandbox(s: string) {
+    return this.request<Sandbox>("GET", fill(routes.SANDBOX, { s }));
+  }
+  /** Destroys the VM and its disk. */
+  deleteSandbox(s: string) {
+    return this.request<void>("DELETE", fill(routes.SANDBOX, { s }));
+  }
+  startSandbox(s: string) {
+    return this.request<Sandbox>("POST", fill(routes.SANDBOX_START, { s }));
+  }
+  /** Stops the VM; the disk is kept. */
+  stopSandbox(s: string) {
+    return this.request<Sandbox>("POST", fill(routes.SANDBOX_STOP, { s }));
+  }
+  /** A single-use token for a terminal socket speaking exec frames (`lib/exec.ts`). */
+  sandboxTerminal(s: string, body: TerminalRequest) {
+    return this.request<TerminalAccess>("POST", fill(routes.SANDBOX_TERMINAL, { s }), body);
+  }
+  /** aho rpc to the aho inside: a new session, or `sessionId`'s with a fresh socket token. */
+  sandboxChat(s: string, sessionId?: string) {
+    const body: StartSandboxChat = { session_id: sessionId ?? null };
+    return this.request<SandboxChat>("POST", fill(routes.SANDBOX_CHAT, { s }), body);
+  }
+  sandboxFiles(s: string) {
+    return this.request<FileTree>("GET", fill(routes.SANDBOX_FILES, { s }));
+  }
+  sandboxFile(s: string, path: string) {
+    return this.request<FileContent>("GET", `${fill(routes.SANDBOX_FILE, { s })}?path=${encodeURIComponent(path)}`);
+  }
+  /** A running sandbox restarts with them; its disk is kept. */
+  setSandboxSettings(s: string, body: SandboxSettings) {
+    return this.request<Sandbox>("PUT", fill(routes.SANDBOX_SETTINGS, { s }), body);
+  }
+  // Environment variables are write-only like secrets; values reach the VM at its next start.
+  sandboxEnv(s: string) {
+    return this.request<EnvVarView[]>("GET", fill(routes.SANDBOX_ENV, { s }));
+  }
+  setSandboxEnv(s: string, body: SetEnvVar) {
+    return this.request<EnvVarView>("PUT", fill(routes.SANDBOX_ENV, { s }), body);
+  }
+  deleteSandboxEnv(s: string, name: string) {
+    return this.request<void>("DELETE", fill(routes.SANDBOX_ENV_VAR, { s, name }));
   }
 }
 

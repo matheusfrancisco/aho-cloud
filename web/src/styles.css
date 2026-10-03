@@ -1567,3 +1567,80 @@ button.tree-row.selected {
 .required-fields label {
   max-width: 32rem;
 }
+
+/* sandboxes */
+.empty .hint {
+  font-weight: 400;
+  max-width: 34rem;
+  text-align: center;
+}
+.sandbox-meta {
+  margin: 0.35rem 0 0;
+}
+.sandbox-tabs {
+  height: calc(100vh - 230px);
+  min-height: 520px;
+}
+.sandbox-panel {
+  display: flex;
+  flex-direction: column;
+}
+.sandbox-panel[hidden] {
+  display: none;
+}
+.sandbox-panel > .chat {
+  flex: 1;
+  min-height: 0;
+  box-shadow: none;
+}
+.sandbox-settings {
+  max-width: 40rem;
+}
+.egress-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.2rem 0 0.5rem;
+  padding: 0;
+}
+.egress-list li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0 0.1rem 0 0.5rem;
+  border-radius: 6px;
+  background: var(--gray-bg);
+  border: 1px solid var(--gray-line);
+  font-size: 0.8rem;
+}
+.egress-list button.icon-button {
+  padding: 0.15rem;
+}
+.terminal-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 0.5rem;
+}
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2rem;
+}
+.terminal-bar .error {
+  margin: 0;
+}
+.terminal-exit {
+  color: var(--fg-soft);
+}
+.terminal-host {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 8px;
+  background: #1f1b2d;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}

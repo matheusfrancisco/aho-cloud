@@ -1,6 +1,7 @@
 //! The host egress proxy: the only way out for a guest. An HTTP `CONNECT` proxy that looks up
 //! the calling guest by source address (spoofing is dropped by the ruleset in [`crate::net`])
-//! and tunnels only to hostnames covered by that deployment's `manifest.egress`.
+//! and tunnels only to hostnames covered by that guest's allowlist (a deployment's
+//! `manifest.egress`, a sandbox's `egress`).
 
 use std::collections::HashMap;
 use std::io;
@@ -8,7 +9,6 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
-use cloud_contract::ledger::Stage;
 use cloud_contract::validate::{host_covered, is_hostname};
 use futures::future::BoxFuture;
 use parking_lot::RwLock;
@@ -23,9 +23,9 @@ pub const MAX_HEAD: usize = 8 * 1024;
 /// What one guest may reach.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GuestPolicy {
-    pub project: String,
-    pub stage: Stage,
-    /// `manifest.egress`: hostnames, a leading `*.` matching subdomains.
+    /// Whose guest it is, for logs: `<project>/<stage>` or `sandbox <slug>`.
+    pub owner: String,
+    /// Hostnames, a leading `*.` matching subdomains.
     pub allow: Vec<String>,
 }
 
@@ -267,8 +267,8 @@ impl<D: Dialer> EgressProxy<D> {
             return respond(&mut client, "403 Forbidden", "unknown guest\n").await;
         };
         if !is_hostname(&target.host, false) || !policy.allows(&target.host) {
-            tracing::info!(%peer, project = %policy.project, host = %target.host, "egress refused");
-            let body = format!("egress to {} is not in the deployment's allowlist\n", target.host);
+            tracing::info!(%peer, owner = %policy.owner, host = %target.host, "egress refused");
+            let body = format!("egress to {} is not in this guest's allowlist\n", target.host);
             return respond(&mut client, "403 Forbidden", &body).await;
         }
         let mut upstream = match self.dialer.dial(&target.host, target.port).await {
@@ -278,7 +278,7 @@ impl<D: Dialer> EgressProxy<D> {
             }
             Err(e) => return respond(&mut client, "502 Bad Gateway", &format!("{e}\n")).await,
         };
-        tracing::info!(%peer, project = %policy.project, host = %target.host, port = target.port, "egress tunnel");
+        tracing::info!(%peer, owner = %policy.owner, host = %target.host, port = target.port, "egress tunnel");
         client.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await?;
         if !rest.is_empty() {
             upstream.write_all(&rest).await?;
@@ -315,7 +315,7 @@ mod tests {
 
     #[test]
     fn wildcards_cover_subdomains_only() {
-        let p = GuestPolicy { project: "shop".into(), stage: Stage::Live, allow: vec!["api.example.com".into(), "*.stripe.com".into()] };
+        let p = GuestPolicy { owner: "shop/live".into(), allow: vec!["api.example.com".into(), "*.stripe.com".into()] };
         assert!(p.allows("api.example.com"));
         assert!(p.allows("files.stripe.com"));
         assert!(p.allows("a.b.stripe.com"));
@@ -329,9 +329,9 @@ mod tests {
     fn policies_key_by_guest_including_mapped_v6_peers() {
         let policies = EgressPolicies::default();
         let guest = IpAddr::V4(Ipv4Addr::new(10, 77, 0, 2));
-        policies.set(guest, GuestPolicy { project: "p".into(), stage: Stage::Preview, allow: vec![] });
+        policies.set(guest, GuestPolicy { owner: "p/preview".into(), allow: vec![] });
         let mapped = IpAddr::V6(Ipv4Addr::new(10, 77, 0, 2).to_ipv6_mapped());
-        assert_eq!(policies.get(mapped).unwrap().project, "p");
+        assert_eq!(policies.get(mapped).unwrap().owner, "p/preview");
         policies.remove(mapped);
         assert!(policies.get(guest).is_none());
     }

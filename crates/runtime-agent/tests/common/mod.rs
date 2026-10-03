@@ -1,5 +1,6 @@
-//! Shared fixtures: a sample deployment and an in-process `Vmm` whose replicas are local HTTP
-//! servers (HTTP health) and in-memory guest control servers (command health).
+//! Shared fixtures: a sample deployment and sandbox, and an in-process `Vmm` whose replicas are
+//! local HTTP servers (HTTP health), in-memory guest control servers (command health) and real
+//! exec servers running local processes.
 
 #![allow(dead_code)]
 
@@ -10,10 +11,12 @@ use std::time::Duration;
 
 use axum::Router;
 use axum::http::StatusCode;
-use cloud_api::internal::Deployment;
+use cloud_api::internal::{Deployment, SANDBOX_IMAGE_REPO, SandboxSpec};
 use cloud_contract::ledger::Stage;
 use cloud_runtime::guest::control::{self, Control, ProcessState};
-use cloud_runtime::vmm::{GuestConn, ReplicaSpec, Started, Vmm, VmmError};
+use cloud_runtime::guest::exec::{self, ExecContext};
+use cloud_runtime::guest::process::{ReapMode, Reaper};
+use cloud_runtime::vmm::{DiskId, GuestConn, ReplicaSpec, Started, Vmm, VmmError, labels};
 use futures::future::BoxFuture;
 use parking_lot::Mutex;
 
@@ -53,9 +56,24 @@ pub fn deployment(release: &str, digest: &str) -> Deployment {
     }
 }
 
+pub fn sandbox(slug: &str, digest: &str) -> SandboxSpec {
+    SandboxSpec {
+        slug: slug.into(),
+        image_repo: SANDBOX_IMAGE_REPO.into(),
+        image_digest: digest.into(),
+        env: BTreeMap::from([("ANTHROPIC_API_KEY".into(), "sk-ant-1".into())]),
+        egress: vec!["api.anthropic.com".into(), "*.github.com".into()],
+        port: Some(3000),
+        cpus: 2,
+        mem_mib: 2048,
+        disk_mib: 10240,
+    }
+}
+
 #[derive(Default)]
 pub struct Fake {
-    /// `start <process> <index> <id>` / `stop <id>`, in call order.
+    /// `start <process> <index> <id>` / `start sandbox <slug> <id>` / `stop <id>` /
+    /// `exec <id>` / `destroy <disk>`, in call order.
     pub log: Vec<String>,
     pub specs: HashMap<String, ReplicaSpec>,
     pub alive: HashSet<String>,
@@ -65,23 +83,48 @@ pub struct Fake {
     pub fail_start: bool,
 }
 
-/// The in-process backend.
+/// The in-process backend. Exec sessions run on this machine, as this user.
 #[derive(Clone, Default)]
 pub struct TestVmm {
     pub fake: Arc<Mutex<Fake>>,
+    /// What [`Vmm::guest_program`] answers.
+    pub guest_program: String,
+}
+
+/// The disk as the fake logs it.
+pub fn disk_name(disk: &DiskId) -> String {
+    match disk {
+        DiskId::Process { project, stage, process, index } => format!("{project}/{}/{process}-{index}", stage.as_str()),
+        DiskId::Sandbox(slug) => format!("sandbox/{slug}"),
+    }
 }
 
 impl TestVmm {
     pub fn alive_ids(&self, process: &str) -> Vec<String> {
         let f = self.fake.lock();
-        let mut ids: Vec<(u16, String)> =
-            f.alive.iter().filter(|id| f.specs[*id].process == process).map(|id| (f.specs[id].index, id.clone())).collect();
+        let mut ids: Vec<(u16, String)> = f
+            .alive
+            .iter()
+            .filter(|id| f.specs[*id].label(labels::PROCESS) == Some(process))
+            .map(|id| (index(&f.specs[id]), id.clone()))
+            .collect();
         ids.sort();
         ids.into_iter().map(|(_, id)| id).collect()
     }
 
+    /// The running VMs of sandbox `slug`.
+    pub fn sandbox_ids(&self, slug: &str) -> Vec<String> {
+        let f = self.fake.lock();
+        f.alive.iter().filter(|id| f.specs[*id].label(labels::SANDBOX) == Some(slug)).cloned().collect()
+    }
+
     pub fn spec(&self, id: &str) -> ReplicaSpec {
         self.fake.lock().specs[id].clone()
+    }
+
+    /// Where the fake serves replica `id`'s port.
+    pub fn endpoint_of(&self, id: &str) -> SocketAddr {
+        self.fake.lock().servers[id].0
     }
 
     /// Simulates the VM dying.
@@ -124,6 +167,11 @@ impl Control for FakeGuest {
     }
 }
 
+/// The process slot index of a deployment replica.
+pub fn index(spec: &ReplicaSpec) -> u16 {
+    spec.label(labels::INDEX).unwrap().parse().unwrap()
+}
+
 impl Vmm for TestVmm {
     fn start(&self, spec: ReplicaSpec) -> BoxFuture<'_, Result<Started, VmmError>> {
         Box::pin(async move {
@@ -133,7 +181,7 @@ impl Vmm for TestVmm {
             let mut server = None;
             if spec.guest.port.is_some() {
                 let fake = self.fake.clone();
-                let process = spec.process.clone();
+                let process = spec.label(labels::PROCESS).unwrap_or_default().to_owned();
                 let app = Router::new().fallback(move || {
                     let sick = fake.lock().unhealthy.contains(&process);
                     async move { if sick { StatusCode::SERVICE_UNAVAILABLE } else { StatusCode::OK } }
@@ -146,7 +194,10 @@ impl Vmm for TestVmm {
                 server = Some((addr, task));
             }
             let mut f = self.fake.lock();
-            f.log.push(format!("start {} {} {}", spec.process, spec.index, spec.id));
+            match spec.label(labels::SANDBOX) {
+                Some(slug) => f.log.push(format!("start sandbox {slug} {}", spec.id)),
+                None => f.log.push(format!("start {} {} {}", spec.label(labels::PROCESS).unwrap(), index(&spec), spec.id)),
+            }
             f.alive.insert(spec.id.clone());
             if let Some(server) = server {
                 f.servers.insert(spec.id.clone(), server);
@@ -179,7 +230,7 @@ impl Vmm for TestVmm {
                 if !f.alive.contains(id) {
                     return Err(VmmError::NotFound(id.into()));
                 }
-                !f.unhealthy.contains(&f.specs[id].process)
+                !f.unhealthy.contains(f.specs[id].label(labels::PROCESS).unwrap_or_default())
             };
             let (host, guest) = tokio::io::duplex(4096);
             tokio::spawn(async move {
@@ -190,7 +241,35 @@ impl Vmm for TestVmm {
         })
     }
 
+    fn exec<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<GuestConn, VmmError>> {
+        Box::pin(async move {
+            let mut f = self.fake.lock();
+            if !f.alive.contains(id) {
+                return Err(VmmError::NotFound(id.into()));
+            }
+            f.log.push(format!("exec {id}"));
+            drop(f);
+            let (host, guest) = tokio::io::duplex(64 * 1024);
+            let reaper = Reaper::start(ReapMode::Own).unwrap();
+            tokio::spawn(async move {
+                let _ = exec::serve(guest, &reaper, &ExecContext::inherit(Duration::from_millis(300))).await;
+            });
+            Ok(Box::new(host) as GuestConn)
+        })
+    }
+
+    fn destroy_volume<'a>(&'a self, disk: &'a DiskId) -> BoxFuture<'a, Result<(), VmmError>> {
+        Box::pin(async move {
+            self.fake.lock().log.push(format!("destroy {}", disk_name(disk)));
+            Ok(())
+        })
+    }
+
     fn endpoint(&self, id: &str, _ip: Ipv4Addr, _port: u16) -> SocketAddr {
         self.fake.lock().servers.get(id).map(|(addr, _)| *addr).unwrap_or_else(|| SocketAddr::from(([127, 0, 0, 1], 1)))
+    }
+
+    fn guest_program(&self) -> &str {
+        &self.guest_program
     }
 }

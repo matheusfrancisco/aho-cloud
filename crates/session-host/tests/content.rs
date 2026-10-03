@@ -46,6 +46,7 @@ async fn host(limits: Limits) -> Host {
         // Never run: these routes do not start sessions.
         command: CommandTemplate { program: "/nonexistent/ahoc".into(), ..CommandTemplate::default() },
         limits,
+        sandbox: cloud_session_host::SandboxConfig::default(),
     };
     let host = SessionHost::new(config, Arc::new(TokioSpawner)).unwrap();
     tokio::spawn(host.serve(listener, std::future::pending()));

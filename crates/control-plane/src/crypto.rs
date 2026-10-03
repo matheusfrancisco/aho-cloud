@@ -96,6 +96,17 @@ impl SecretBox {
         String::from_utf8(plain).map_err(|_| SecretBoxError::Malformed)
     }
 
+    /// Seals a sandbox environment value, authenticated with `(sandbox, name)` in a domain of its
+    /// own: a row never opens as another sandbox's, another variable's or a project secret.
+    pub fn seal_env(&self, sandbox: &str, name: &str, value: &str) -> Result<Vec<u8>, SecretBoxError> {
+        self.seal_with(format!("aho-cloud/sandbox-env/v1\n{sandbox}\n{name}").as_bytes(), value.as_bytes())
+    }
+
+    pub fn open_env(&self, sandbox: &str, name: &str, sealed: &[u8]) -> Result<String, SecretBoxError> {
+        let plain = self.open_with(format!("aho-cloud/sandbox-env/v1\n{sandbox}\n{name}").as_bytes(), sealed)?;
+        String::from_utf8(plain).map_err(|_| SecretBoxError::Malformed)
+    }
+
     /// Seals an internal document (e.g. the domain registry snapshot) bound to `label`.
     pub fn seal_bytes(&self, label: &str, bytes: &[u8]) -> Result<Vec<u8>, SecretBoxError> {
         self.seal_with(format!("aho-cloud/doc/v1\n{label}").as_bytes(), bytes)
@@ -172,6 +183,21 @@ mod tests {
         assert!(matches!(b.open("shop", "STRIPE_KEY", Stage::Staging, &sealed), Err(SecretBoxError::Authentication)));
         let other_key = SecretBox::new(&MasterKey::new([8; 32]));
         assert!(other_key.open("shop", "STRIPE_KEY", Stage::Live, &sealed).is_err());
+    }
+
+    #[test]
+    fn sandbox_env_values_open_only_as_themselves() {
+        let b = secret_box();
+        let sealed = b.seal_env("dev", "ANTHROPIC_API_KEY", "sk-ant-123").unwrap();
+        assert!(!sealed.windows(10).any(|w| w == b"sk-ant-123"), "plaintext must not appear in the row");
+        assert_eq!(b.open_env("dev", "ANTHROPIC_API_KEY", &sealed).unwrap(), "sk-ant-123");
+        assert!(matches!(b.open_env("web", "ANTHROPIC_API_KEY", &sealed), Err(SecretBoxError::Authentication)));
+        assert!(matches!(b.open_env("dev", "OTHER", &sealed), Err(SecretBoxError::Authentication)));
+        for stage in [Stage::Preview, Stage::Staging, Stage::Live] {
+            assert!(b.open("dev", "ANTHROPIC_API_KEY", stage, &sealed).is_err(), "never a project secret");
+        }
+        let secret = b.seal("dev", "ANTHROPIC_API_KEY", Stage::Live, "sk-ant-123").unwrap();
+        assert!(b.open_env("dev", "ANTHROPIC_API_KEY", &secret).is_err(), "and no project secret is an env value");
     }
 
     #[test]

@@ -3,12 +3,13 @@
 use std::io::{BufRead, IsTerminal, Read};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use cloud_api::client::Client;
 use cloud_api::{
-    AddDomain, Approve, CheckResult, CreateProject, DevicePoll, DevicePolled, DeviceStart, GrantStandingOrders, Promote, ProposeRelease,
-    Reject, Release, Rollback, SetSecret,
+    AddDomain, Approve, CheckResult, CreateProject, CreateSandbox, DEFAULT_SANDBOX_EGRESS, DevicePoll, DevicePolled, DeviceStart,
+    GrantStandingOrders, Promote, ProposeRelease, Reject, Release, Rollback, SANDBOX_AUTO_STOP_DEFAULT_HOURS, SandboxSettings, SetEnvVar,
+    SetSecret,
 };
 use cloud_contract::Manifest;
 use cloud_contract::draft::Draft;
@@ -17,11 +18,12 @@ use cloud_contract::policy::StandingOrder;
 use cloud_importers::Overruled;
 
 use crate::cli::{
-    Cli, Command, DEFAULT_API_URL, DeployArgs, DomainsCmd, GrantArgs, ManifestCmd, ReleaseCmd, SecretsCmd, StandingOrdersCmd,
+    Cli, Command, DEFAULT_API_URL, DeployArgs, DomainsCmd, EnvCmd, GrantArgs, ManifestCmd, ReleaseCmd, SandboxCmd, SecretsCmd,
+    SettingsArgs, StandingOrdersCmd,
 };
 use crate::creds::{self, Credentials};
 use crate::error::{Error, Result};
-use crate::{card, confirm, sign};
+use crate::{card, confirm, sign, ssh};
 
 struct Ctx {
     api_url: Option<String>,
@@ -72,6 +74,17 @@ pub async fn run(cli: Cli) -> Result<ExitCode> {
         Command::Domains(cmd) => domains(&ctx, cmd).await,
         Command::Secrets(cmd) => secrets(&ctx, cmd).await,
         Command::StandingOrders(StandingOrdersCmd::Grant(args)) => grant(&ctx, args).await,
+        Command::Sandbox(cmd) => sandbox(&ctx, cmd).await,
+        Command::Ssh { sandbox, pty, no_pty, command } => {
+            let choice = if pty {
+                Some(true)
+            } else if no_pty {
+                Some(false)
+            } else {
+                None
+            };
+            ssh::ssh(&ctx.session()?.1, &sandbox, command, choice).await
+        }
     }
 }
 
@@ -204,27 +217,27 @@ fn manifest_check(file: &Path, edge: Option<&Path>) -> Result<ExitCode> {
 
 // ---- deploy ---------------------------------------------------------------------------------
 
+/// `--org`, else the caller's only org; `context` says why one is needed when there are several.
+async fn choose_org(client: &Client, org: Option<&str>, context: &str) -> Result<String> {
+    if let Some(o) = org {
+        return Ok(o.to_owned());
+    }
+    let me = client.me().await?;
+    match me.orgs.as_slice() {
+        [only] => Ok(only.org.clone()),
+        [] => Err(Error::Invalid("you belong to no org yet; create one in the console".into())),
+        many => {
+            let names: Vec<&str> = many.iter().map(|m| m.org.as_str()).collect();
+            Err(Error::Invalid(format!("{context}; pass --org (one of {})", names.join(", "))))
+        }
+    }
+}
+
 async fn ensure_project(client: &Client, project: &str, org: Option<&str>) -> Result<()> {
     match client.project(project).await {
         Ok(_) => Ok(()),
         Err(e) if e.code() == Some("not_found") => {
-            let org = match org {
-                Some(o) => o.to_owned(),
-                None => {
-                    let me = client.me().await?;
-                    match me.orgs.as_slice() {
-                        [only] => only.org.clone(),
-                        [] => return Err(Error::Invalid("you belong to no org yet; create one in the console".into())),
-                        many => {
-                            let names: Vec<&str> = many.iter().map(|m| m.org.as_str()).collect();
-                            return Err(Error::Invalid(format!(
-                                "project {project} does not exist; pass --org (one of {})",
-                                names.join(", ")
-                            )));
-                        }
-                    }
-                }
-            };
+            let org = choose_org(client, org, &format!("project {project} does not exist")).await?;
             client.create_project(&org, &CreateProject { slug: project.to_owned() }).await?;
             println!("created project {project} in org {org}");
             Ok(())
@@ -445,7 +458,7 @@ async fn secrets(ctx: &Ctx, cmd: SecretsCmd) -> Result<ExitCode> {
     let project = ctx.project()?;
     match cmd {
         SecretsCmd::Set { name, stage } => {
-            let value = read_secret(&name)?;
+            let value = read_secret(&name, &format!("ahocloud secrets set {name} --stage live < value.txt"))?;
             let view = client.set_secret(&project, &SetSecret { name: name.clone(), stage, value }).await?;
             println!("set {name} for {} (fingerprint {})", stage.as_str(), view.fingerprint);
         }
@@ -459,9 +472,107 @@ async fn secrets(ctx: &Ctx, cmd: SecretsCmd) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+// ---- sandboxes ------------------------------------------------------------------------------
+
+fn now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
+async fn sandbox(ctx: &Ctx, cmd: SandboxCmd) -> Result<ExitCode> {
+    let (_, client) = ctx.session()?;
+    match cmd {
+        SandboxCmd::Create { slug, org, port, egress, auto_stop_hours } => {
+            let org = choose_org(&client, org.as_deref(), "you belong to several orgs").await?;
+            let customized = port.is_some() || !egress.is_empty() || auto_stop_hours.is_some();
+            let settings = customized.then(|| SandboxSettings {
+                egress: if egress.is_empty() { DEFAULT_SANDBOX_EGRESS.iter().map(|h| (*h).to_owned()).collect() } else { egress },
+                port,
+                auto_stop_hours: auto_stop_hours.unwrap_or(SANDBOX_AUTO_STOP_DEFAULT_HOURS),
+            });
+            let s = client.create_sandbox(&org, &CreateSandbox { slug, settings }).await?;
+            print!("{}", card::sandbox(&s, now()));
+            println!("next: `ahocloud sandbox env set {} ANTHROPIC_API_KEY`, then `ahocloud ssh {0}`", s.slug);
+        }
+        SandboxCmd::Ls { org } => {
+            let org = choose_org(&client, org.as_deref(), "you belong to several orgs").await?;
+            let list = client.org_sandboxes(&org).await?;
+            if list.is_empty() {
+                println!("no sandboxes in {org}; create one with `ahocloud sandbox create <slug>`");
+            }
+            for s in &list {
+                println!("{}", card::sandbox_row(s));
+            }
+        }
+        SandboxCmd::Start { slug } => print!("{}", card::sandbox(&client.start_sandbox(&slug).await?, now())),
+        SandboxCmd::Stop { slug } => print!("{}", card::sandbox(&client.stop_sandbox(&slug).await?, now())),
+        SandboxCmd::Rm { slug, yes } => {
+            if !yes && !confirm_delete(&slug)? {
+                return Err(Error::Invalid(format!("kept {slug}: answer y to delete it, or pass --yes")));
+            }
+            client.delete_sandbox(&slug).await?;
+            println!("deleted sandbox {slug} and its disk");
+        }
+        SandboxCmd::Settings(args) => sandbox_settings(&client, args).await?,
+        SandboxCmd::Env(EnvCmd::Set { slug, name }) => {
+            let value = read_secret(&name, &format!("ahocloud sandbox env set {slug} {name} < value.txt"))?;
+            let view = client.set_sandbox_env(&slug, &SetEnvVar { name: name.clone(), value }).await?;
+            println!("set {name} on {slug} (fingerprint {}); it reaches the VM at its next start", view.fingerprint);
+        }
+        SandboxCmd::Env(EnvCmd::Ls { slug }) => {
+            for v in client.sandbox_env(&slug).await? {
+                println!("{}  {}", v.name, v.fingerprint);
+            }
+        }
+        SandboxCmd::Env(EnvCmd::Rm { slug, name }) => {
+            client.delete_sandbox_env(&slug, &name).await?;
+            println!("removed {name} from {slug}; the VM loses it at its next start");
+        }
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Without flags, shows the settings; otherwise applies the changes to the current ones.
+async fn sandbox_settings(client: &Client, args: SettingsArgs) -> Result<()> {
+    let current = client.sandbox(&args.slug).await?;
+    if !args.changes_anything() {
+        print!("{}", card::sandbox(&current, now()));
+        return Ok(());
+    }
+    let mut settings = current.settings;
+    if args.no_port {
+        settings.port = None;
+    }
+    if args.port.is_some() {
+        settings.port = args.port;
+    }
+    if !args.egress.is_empty() {
+        settings.egress = args.egress;
+    }
+    for host in args.allow {
+        if !settings.egress.contains(&host) {
+            settings.egress.push(host);
+        }
+    }
+    settings.egress.retain(|h| !args.deny.contains(h));
+    if let Some(h) = args.auto_stop_hours {
+        settings.auto_stop_hours = h;
+    }
+    let updated = client.set_sandbox_settings(&args.slug, &settings).await?;
+    print!("{}", card::sandbox(&updated, now()));
+    Ok(())
+}
+
+/// Asks on stderr, answers from stdin; only `y`/`yes` deletes.
+fn confirm_delete(slug: &str) -> Result<bool> {
+    eprint!("delete sandbox {slug} and its /workspace disk? this cannot be undone [y/N] ");
+    let mut line = String::new();
+    std::io::stdin().lock().read_line(&mut line).map_err(Error::io("<stdin>"))?;
+    Ok(matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes"))
+}
+
 /// The value comes from stdin only: piped (all of it, minus one trailing newline), or typed at
-/// a terminal with echo off.
-fn read_secret(name: &str) -> Result<String> {
+/// a terminal with echo off. `example` shows how to pipe it.
+fn read_secret(name: &str, example: &str) -> Result<String> {
     let stdin = std::io::stdin();
     let raw = if stdin.is_terminal() {
         eprint!("value for {name} (not echoed): ");
@@ -475,9 +586,7 @@ fn read_secret(name: &str) -> Result<String> {
     };
     let value = raw.strip_suffix('\n').map_or(raw.as_str(), |v| v.strip_suffix('\r').unwrap_or(v));
     if value.is_empty() {
-        return Err(Error::Invalid(format!(
-            "no value for {name} on stdin; pipe it in, e.g. `ahocloud secrets set {name} --stage live < value.txt`"
-        )));
+        return Err(Error::Invalid(format!("no value for {name} on stdin; pipe it in, e.g. `{example}`")));
     }
     Ok(value.to_owned())
 }

@@ -1,4 +1,5 @@
-//! The WebSocket ↔ child stdio pump for one rpc connection.
+//! The WebSocket ↔ child stdio pump for one rpc connection. The child is a local `ahoc`
+//! (workspaces) or an exec session inside a sandbox (sandbox chats); see [`crate::spawn::Launch`].
 //!
 //! * Client → child: every text message must be one JSON object on one line, at most
 //!   `max_frame_bytes`, and the first must be method `hello`. It is written to the child's stdin
@@ -7,8 +8,9 @@
 //!   teaches the workspace its session id, persisted before the frame is forwarded.
 //! * Teardown: client close, frame violation or idle timeout closes the child's stdin; the child
 //!   gets `kill_grace` to exit and is then killed. When the child exits first, its remaining output
-//!   is forwarded and the socket closed: 1000 on exit code 0, 1011 otherwise. The connection's
-//!   limit slot is released only once the child is gone.
+//!   is forwarded and the socket closed: 1000 on exit code 0, 1011 otherwise. A failed child's
+//!   last stderr line is sent as an aho `error` event and appended to the close reason, so the
+//!   client learns why. The connection's limit slot is released only once the child is gone.
 //! * Takeover: a newer connection to the same workspace asks this one to leave; it is torn down
 //!   like a client close and the socket closed with [`CLOSE_REPLACED`].
 
@@ -30,7 +32,7 @@ use tokio::task::JoinHandle;
 use tokio::time::{Instant, sleep_until, timeout};
 
 use crate::limits::{Denied, Limits, Permit};
-use crate::spawn::{CommandTemplate, Process, Spawned, Spawner};
+use crate::spawn::{Launch, Process, Spawned};
 use crate::workspace::{Workspace, is_session_id};
 
 /// How long to wait for the client's close reply after sending ours.
@@ -171,7 +173,7 @@ impl Activity {
 
 /// How the server ends the socket.
 #[derive(Debug)]
-enum Farewell {
+pub(crate) enum Farewell {
     /// The transport is already gone.
     Silent,
     /// The client sent a close; complete the handshake.
@@ -188,14 +190,22 @@ fn replaced_farewell() -> Farewell {
     Farewell::Close { error: Some(REPLACED_MESSAGE.into()), code: CLOSE_REPLACED, reason: "replaced by a newer connection".into() }
 }
 
-fn child_farewell(status: &io::Result<Option<i32>>) -> Farewell {
-    let (code, reason) = match status {
-        Ok(Some(0)) => (close_code::NORMAL, "session process exited".to_owned()),
-        Ok(Some(n)) => (close_code::ERROR, format!("session process exited with code {n}")),
-        Ok(None) => (close_code::ERROR, "session process was terminated by a signal".to_owned()),
-        Err(_) => (close_code::ERROR, "session process was lost".to_owned()),
+/// 1000 on exit 0, else 1011; a failure carries the child's last stderr line (`tail`), as an
+/// `error` event and in the reason.
+fn child_farewell(status: &io::Result<Option<i32>>, tail: Option<String>) -> Farewell {
+    let reason = match status {
+        Ok(Some(0)) => return Farewell::Close { error: None, code: close_code::NORMAL, reason: "session process exited".into() },
+        Ok(Some(n)) => format!("session process exited with code {n}"),
+        Ok(None) => "session process was terminated by a signal".to_owned(),
+        Err(_) => "session process was lost".to_owned(),
     };
-    Farewell::Close { error: None, code, reason }
+    match tail {
+        Some(line) => {
+            let message = format!("{reason}: {line}");
+            Farewell::Close { error: Some(message.clone()), code: close_code::ERROR, reason: message }
+        }
+        None => Farewell::Close { error: None, code: close_code::ERROR, reason },
+    }
 }
 
 /// An aho `error` event, so clients that only read frames learn why the socket closes.
@@ -203,7 +213,7 @@ fn error_event(message: &str) -> String {
     serde_json::json!({ "v": 1, "reply_to": null, "event": "error", "payload": { "message": message } }).to_string()
 }
 
-fn truncate(s: &str, max: usize) -> &str {
+pub(crate) fn truncate(s: &str, max: usize) -> &str {
     let mut end = s.len().min(max);
     while !s.is_char_boundary(end) {
         end -= 1;
@@ -211,7 +221,7 @@ fn truncate(s: &str, max: usize) -> &str {
     &s[..end]
 }
 
-async fn say_farewell(mut sink: WsSink, stream: Option<WsStream>, farewell: Farewell) {
+pub(crate) async fn say_farewell(mut sink: WsSink, stream: Option<WsStream>, farewell: Farewell) {
     match farewell {
         Farewell::Silent => {}
         Farewell::Echo => {
@@ -409,15 +419,14 @@ async fn stop_child(process: &mut dyn Process, grace: Duration) -> io::Result<Op
 pub(crate) struct Conn {
     pub workspace: Arc<Workspace>,
     pub user: String,
-    pub spawner: Arc<dyn Spawner>,
-    pub template: Arc<CommandTemplate>,
+    pub launch: Box<dyn Launch>,
     pub limits: Limits,
     pub permit: Permit,
 }
 
 /// Runs one connection to completion.
 pub(crate) async fn run(socket: WebSocket, conn: Conn) {
-    let Conn { workspace, user, spawner, template, limits, mut permit } = conn;
+    let Conn { workspace, user, launch, limits, mut permit } = conn;
     let (sink, mut stream) = socket.split();
 
     let first = tokio::select! {
@@ -443,11 +452,10 @@ pub(crate) async fn run(socket: WebSocket, conn: Conn) {
     };
 
     let session = workspace.session_id().await;
-    let spec = template.render(&workspace.project_dir.to_string_lossy(), session.as_deref(), &workspace.id);
-    let Spawned { stdin, stdout, mut process } = match spawner.spawn(&spec) {
+    let Spawned { stdin, stdout, mut process } = match launch.launch(session.as_deref()).await {
         Ok(spawned) => spawned,
         Err(e) => {
-            tracing::error!(workspace = %workspace.id, program = %spec.program.display(), "spawn failed: {e}");
+            tracing::error!(workspace = %workspace.id, "session process did not start: {e}");
             drop(permit);
             let message = "could not start the session process".to_owned();
             say_farewell(sink, Some(stream), Farewell::Close { error: Some(message.clone()), code: close_code::ERROR, reason: message })
@@ -536,7 +544,7 @@ pub(crate) async fn run(socket: WebSocket, conn: Conn) {
 
     let farewell = match (&outcome, &client) {
         (Outcome::Client, Some((_, end))) => end.farewell(),
-        (Outcome::Exited | Outcome::StdoutClosed, _) => child_farewell(&status),
+        (Outcome::Exited | Outcome::StdoutClosed, _) => child_farewell(&status, process.stderr_tail()),
         (Outcome::BadOutput(e), _) => Farewell::Close { error: Some(e.to_string()), code: close_code::ERROR, reason: e.to_string() },
         (Outcome::Idle, _) => idle_farewell(),
         (Outcome::Replaced, _) => replaced_farewell(),

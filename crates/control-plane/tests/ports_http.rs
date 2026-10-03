@@ -2,19 +2,20 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, reason = "test code: a failed unwrap is a failed test")]
 
 use parking_lot::Mutex;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use cloud_api::ApiError;
+use cloud_api::exec::ExecRequest;
 use cloud_api::internal::{
-    BuildJob, BuildResult, Deployment, DeploymentStatus, Maintenance, RunState, Scale, StartWorkspace, WorkspaceFileRef, WorkspacePackage,
-    WorkspaceRef, WorkspaceStarted, routes,
+    BuildJob, BuildResult, Deployment, DeploymentStatus, Maintenance, RunState, SandboxChatStart, SandboxSpec, SandboxStatus,
+    SandboxTerminal, Scale, StartWorkspace, WorkspaceFileRef, WorkspacePackage, WorkspaceRef, WorkspaceStarted, routes,
 };
-use cloud_api::{FileContent, FileEntry, FileKind, FileTree};
+use cloud_api::{ApiError, FileContent, FileEntry, FileKind, FileTree, SandboxChat, SandboxState, TerminalAccess};
 use cloud_contract::ledger::Stage;
 use cloud_contract::manifest::{Build, Source};
 use cloud_control_plane::ports::*;
@@ -224,4 +225,153 @@ async fn session_host_adapter_packs_lists_and_reads_files_and_classifies_refusal
     let e = HttpSessionHost(client(&base, "wrong")).files(ws("u1")).await.unwrap_err();
     assert!(matches!(e, PortError::Status { status: 401, .. }), "a bad service token is not the caller's fault: {e:?}");
     assert_eq!(status(e), StatusCode::BAD_GATEWAY);
+}
+
+type Answer<T> = Result<T, (StatusCode, Json<ApiError>)>;
+
+fn refuse<T>(status: StatusCode, code: &str, message: &str) -> Answer<T> {
+    Err((status, Json(ApiError::new(code, message))))
+}
+
+fn sandbox_status(slug: &str, state: SandboxState, address: Option<&str>) -> SandboxStatus {
+    SandboxStatus { slug: slug.into(), state, address: address.map(Into::into), error: None }
+}
+
+/// The runtime agent's and session host's sandbox routes. `gone` is a slug the runtime does not
+/// know; `stopped` one whose VM is not running.
+async fn fake_sandbox_services(seen: Seen) -> String {
+    let app = Router::new()
+        .route(
+            routes::SANDBOX,
+            get(|h: HeaderMap, Path(s): Path<String>| async move {
+                authorized(&h)?;
+                if s == "gone" {
+                    return refuse(StatusCode::NOT_FOUND, "not_found", "no such sandbox");
+                }
+                Ok(Json(sandbox_status(&s, SandboxState::Running, Some("10.1.0.5:3000"))))
+            })
+            .put(|State(seen): State<Seen>, h: HeaderMap, Path(s): Path<String>, Json(spec): Json<SandboxSpec>| async move {
+                authorized(&h)?;
+                if spec.slug != s || !spec.image_digest.starts_with("sha256:") {
+                    return refuse(StatusCode::BAD_REQUEST, "invalid", "bad digest");
+                }
+                seen.0.lock().push(format!("put {s} {}", spec.env.keys().cloned().collect::<Vec<_>>().join(",")));
+                Ok(Json(sandbox_status(&s, SandboxState::Starting, None)))
+            })
+            .delete(|State(seen): State<Seen>, h: HeaderMap, Path(s): Path<String>| async move {
+                authorized(&h)?;
+                seen.0.lock().push(format!("delete {s}"));
+                Ok::<_, (StatusCode, Json<ApiError>)>(StatusCode::NO_CONTENT)
+            }),
+        )
+        .route(
+            routes::SANDBOX_STOP,
+            post(|h: HeaderMap, Path(s): Path<String>| async move {
+                authorized(&h)?;
+                if s == "gone" {
+                    return refuse(StatusCode::NOT_FOUND, "not_found", "no such sandbox");
+                }
+                Ok(Json(sandbox_status(&s, SandboxState::Stopped, None)))
+            }),
+        )
+        .route(
+            routes::SANDBOX_FILES,
+            get(|h: HeaderMap, Path(s): Path<String>| async move {
+                authorized(&h)?;
+                if s == "stopped" {
+                    return refuse(StatusCode::CONFLICT, "not_running", "sandbox is not running");
+                }
+                Ok(Json(FileTree { files: vec![FileEntry { path: format!("{s}.txt"), kind: FileKind::File, size: 1 }], truncated: false }))
+            }),
+        )
+        .route(
+            routes::SANDBOX_FILE,
+            get(|h: HeaderMap, Path(_): Path<String>, Query(q): Query<HashMap<String, String>>| async move {
+                authorized(&h)?;
+                let path = q.get("path").cloned().unwrap_or_default();
+                if path == "missing.txt" {
+                    return refuse(StatusCode::NOT_FOUND, "not_found", "no such file");
+                }
+                Ok(Json(FileContent { size: 0, text: Some(String::new()), truncated: false, path }))
+            }),
+        )
+        .route(
+            routes::SANDBOX_TERMINALS,
+            post(|h: HeaderMap, Json(t): Json<SandboxTerminal>| async move {
+                authorized(&h)?;
+                Ok::<_, (StatusCode, Json<ApiError>)>(Json(TerminalAccess {
+                    url: format!("ws://host/terminal/{}/{}/{}", t.sandbox, t.user_id, t.exec.argv.join("+")),
+                    token: "single-use".into(),
+                }))
+            }),
+        )
+        .route(
+            routes::SANDBOX_CHATS,
+            post(|h: HeaderMap, Json(c): Json<SandboxChatStart>| async move {
+                authorized(&h)?;
+                if c.user_id == "nobody" {
+                    return refuse(StatusCode::SERVICE_UNAVAILABLE, "unavailable", "no --runtime-url");
+                }
+                Ok(Json(SandboxChat {
+                    rpc_url: format!("ws://host/sandbox-rpc/{}", c.sandbox),
+                    token: "t".into(),
+                    session_id: c.session_id,
+                }))
+            }),
+        )
+        .with_state(seen);
+    serve(app).await
+}
+
+#[tokio::test]
+async fn runtime_adapter_runs_stops_deletes_sandboxes_and_reads_their_files() {
+    let seen = Seen::default();
+    let base = fake_sandbox_services(seen.clone()).await;
+    let rt = HttpRuntime(client(&base, TOKEN));
+    let spec = SandboxSpec {
+        slug: "dev".into(),
+        image_repo: "aho.sandbox".into(),
+        image_digest: format!("sha256:{}", "c".repeat(64)),
+        env: BTreeMap::from([("ANTHROPIC_API_KEY".to_owned(), "k".to_owned())]),
+        egress: vec!["api.anthropic.com".into()],
+        port: Some(3000),
+        cpus: 2,
+        mem_mib: 2048,
+        disk_mib: 10240,
+    };
+    assert_eq!(rt.put_sandbox(spec.clone()).await.unwrap().state, SandboxState::Starting);
+    let e = rt.put_sandbox(SandboxSpec { image_digest: "latest".into(), ..spec }).await.unwrap_err();
+    assert!(matches!(&e, PortError::Rejected { message, .. } if message.contains("bad digest")), "a refused spec is the caller's: {e:?}");
+
+    let live = rt.sandbox_status("dev").await.unwrap().unwrap();
+    assert_eq!((live.state, live.address.as_deref()), (SandboxState::Running, Some("10.1.0.5:3000")));
+    assert!(rt.sandbox_status("gone").await.unwrap().is_none(), "unknown to the runtime: no VM");
+    assert_eq!(rt.stop_sandbox("dev").await.unwrap().map(|s| s.state), Some(SandboxState::Stopped));
+    assert!(rt.stop_sandbox("gone").await.unwrap().is_none());
+    rt.delete_sandbox("dev").await.unwrap();
+    assert_eq!(*seen.0.lock(), vec!["put dev ANTHROPIC_API_KEY".to_owned(), "delete dev".to_owned()]);
+
+    assert_eq!(rt.sandbox_files("dev").await.unwrap().files[0].path, "dev.txt");
+    assert!(matches!(rt.sandbox_files("stopped").await, Err(PortError::Rejected { .. })));
+    let odd = "dir with space/a&b=c?#.txt";
+    assert_eq!(rt.sandbox_file("dev", odd).await.unwrap().path, odd, "the path survives the query string");
+    assert!(matches!(rt.sandbox_file("dev", "missing.txt").await, Err(PortError::NotFound { .. })));
+    let e = HttpRuntime(client(&base, "wrong")).sandbox_status("dev").await.unwrap_err();
+    assert!(matches!(e, PortError::Status { status: 401, .. }), "a bad service token is ours: {e:?}");
+}
+
+#[tokio::test]
+async fn session_host_adapter_opens_sandbox_terminals_and_chats() {
+    use cloud_control_plane::AppError;
+    let base = fake_sandbox_services(Seen::default()).await;
+    let host = HttpSessionHost(client(&base, TOKEN));
+    let exec = ExecRequest { argv: vec!["bash".into(), "-l".into()], pty: None, env: BTreeMap::new(), cwd: None };
+    let access = host.sandbox_terminal(SandboxTerminal { sandbox: "dev".into(), user_id: "u1".into(), exec }).await.unwrap();
+    assert_eq!((access.url.as_str(), access.token.as_str()), ("ws://host/terminal/dev/u1/bash+-l", "single-use"));
+    let chat =
+        host.sandbox_chat(SandboxChatStart { sandbox: "dev".into(), user_id: "u1".into(), session_id: Some("s1".into()) }).await.unwrap();
+    assert_eq!((chat.rpc_url.as_str(), chat.session_id.as_deref()), ("ws://host/sandbox-rpc/dev", Some("s1")));
+    let e = host.sandbox_chat(SandboxChatStart { sandbox: "dev".into(), user_id: "nobody".into(), session_id: None }).await.unwrap_err();
+    assert!(matches!(e, PortError::Status { status: 503, .. }), "{e:?}");
+    assert_eq!(AppError::from(e).status(), StatusCode::BAD_GATEWAY);
 }

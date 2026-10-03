@@ -40,6 +40,17 @@ export function useLoad<T>(load: () => Promise<T>, deps: readonly unknown[]): Lo
   return { data, error, loading, reload };
 }
 
+/** Calls `tick` every `ms` while `active`, e.g. to follow something until it settles. */
+export function useInterval(active: boolean, ms: number, tick: () => void): void {
+  const tickRef = useRef(tick);
+  tickRef.current = tick;
+  useEffect(() => {
+    if (!active) return;
+    const handle = setInterval(() => tickRef.current(), ms);
+    return () => clearInterval(handle);
+  }, [active, ms]);
+}
+
 export interface Action<A extends unknown[]> {
   run: (...args: A) => Promise<void>;
   busy: boolean;

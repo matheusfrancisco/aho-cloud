@@ -1,6 +1,6 @@
 [package]
 name = "cloud-runtime"
-description = "Per-host runtime agent: runs approved deployments as Firecracker microVMs with cgroup ceilings, an egress allowlist proxy and health supervision; plus cloud-guest, the PID 1 inside each VM."
+description = "Per-host runtime agent: runs approved deployments and sandboxes as Firecracker microVMs with cgroup ceilings, an egress allowlist proxy and health supervision; plus cloud-guest, the PID 1 inside each VM (and the exec server and file walker of sandboxes)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -17,6 +17,7 @@ path = "src/bin/cloud-guest.rs"
 [dependencies]
 cloud-contract.workspace = true
 cloud-api.workspace = true
+cloud-workdir.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
@@ -33,6 +34,7 @@ parking_lot = "0.12"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 nix = { version = "0.31", features = ["signal", "process", "mount", "reboot", "fs"] }
+pty-process = "0.5"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 tokio-vsock = "0.7"
@@ -40,6 +42,7 @@ tokio-vsock = "0.7"
 [dev-dependencies]
 tempfile.workspace = true
 reqwest.workspace = true
+tokio-tungstenite = "0.29"
 
 [lints]
 workspace = true

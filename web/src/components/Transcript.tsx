@@ -75,7 +75,7 @@ function blockText(blocks: ContentBlock[]): string {
     .join("\n");
 }
 
-function Row({ entry, onReviewDraft }: { entry: Entry; onReviewDraft: (body: DraftedBody) => void }) {
+function Row({ entry, onReviewDraft }: { entry: Entry; onReviewDraft?: (body: DraftedBody) => void }) {
   const k = entry.kind;
   switch (k.type) {
     case "user_message":
@@ -136,9 +136,11 @@ function Row({ entry, onReviewDraft }: { entry: Entry; onReviewDraft: (body: Dra
         return (
           <li className="msg deploy">
             <strong>Manifest draft ready</strong> — {Object.keys(drafted.draft.fields).length} fields, {drafted.unconfirmed.length} to confirm.{" "}
-            <button type="button" onClick={() => onReviewDraft(drafted)}>
-              Review draft
-            </button>
+            {onReviewDraft !== undefined && (
+              <button type="button" onClick={() => onReviewDraft(drafted)}>
+                Review draft
+              </button>
+            )}
           </li>
         );
       }
@@ -161,7 +163,8 @@ function Row({ entry, onReviewDraft }: { entry: Entry; onReviewDraft: (body: Dra
   }
 }
 
-export function Transcript({ entries, streaming, onReviewDraft }: { entries: Entry[]; streaming: string; onReviewDraft: (body: DraftedBody) => void }) {
+/** `onReviewDraft`: offers a "Review draft" button on manifest drafts; without it they are only shown. */
+export function Transcript({ entries, streaming, onReviewDraft }: { entries: Entry[]; streaming: string; onReviewDraft?: (body: DraftedBody) => void }) {
   return (
     <ol className="transcript" aria-label="transcript">
       {entries.map((e) => (

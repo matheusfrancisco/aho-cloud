@@ -1,5 +1,5 @@
 //! Supervisor behavior against an in-process `Vmm`: reconcile, scale, sleep, maintenance,
-//! restarts, rollouts, crashes and health.
+//! restarts, rollouts, crashes and health; and the sandbox lifecycle.
 // Helpers outside `#[test]` fns are test code too.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -8,12 +8,14 @@ mod common;
 use std::net::IpAddr;
 use std::time::Duration;
 
-use cloud_api::internal::RunState;
+use cloud_api::SandboxState;
+use cloud_api::internal::{RunState, SANDBOX_WORKSPACE};
 use cloud_contract::ledger::Stage;
 use cloud_runtime::egress::EgressPolicies;
 use cloud_runtime::net::Allocator;
+use cloud_runtime::vmm::DiskId;
 use cloud_runtime::{Supervisor, SupervisorConfig, SupervisorError};
-use common::{DIGEST_1, DIGEST_2, TestVmm, deployment};
+use common::{DIGEST_1, DIGEST_2, TestVmm, deployment, index, sandbox};
 
 const P: &str = "acme-shop";
 const S: Stage = Stage::Live;
@@ -25,6 +27,7 @@ fn config(grace: Duration) -> SupervisorConfig {
         health_timeout: Duration::from_millis(500),
         unhealthy_threshold: 1,
         startup_grace: grace,
+        sandbox_failures: 2,
     }
 }
 
@@ -92,7 +95,7 @@ async fn scale_adds_and_removes_the_highest_indices_within_bounds() {
     assert_eq!(process(&status, "web").replicas, 3);
     assert_eq!(process(&status, "web").addresses.len(), 3);
     let ids = vmm.alive_ids("web");
-    let indices: Vec<u16> = ids.iter().map(|id| vmm.spec(id).index).collect();
+    let indices: Vec<u16> = ids.iter().map(|id| index(&vmm.spec(id))).collect();
     assert_eq!(indices, [0, 1, 2]);
 
     sup.scale(P, S, "web", 1).unwrap();
@@ -236,7 +239,7 @@ async fn crashed_replicas_are_rebooted_in_their_slot() {
     let web = vmm.alive_ids("web");
     assert_eq!(web.len(), 1);
     assert_ne!(web[0], dead);
-    assert_eq!(vmm.spec(&web[0]).index, 0);
+    assert_eq!(index(&vmm.spec(&web[0])), 0);
     assert!(vmm.log().contains(&format!("stop {dead}")), "dead VM is cleaned up");
     // Its address went back to the pool and was reused by the replacement.
     assert_eq!(vmm.spec(&web[0]).lease.ip, dead_ip);
@@ -312,4 +315,187 @@ async fn project_mismatch_is_refused() {
     let mut d = deployment("r1", DIGEST_1);
     d.project = "other".into();
     assert!(matches!(sup.apply(d), Err(SupervisorError::Invalid(_))));
+}
+
+const SB: &str = "dev-box";
+
+#[tokio::test]
+async fn a_sandbox_boots_with_its_own_resources_disk_env_and_egress() {
+    let (sup, vmm, egress) = supervisor(Duration::ZERO);
+    sup.apply(deployment("r1", DIGEST_1)).unwrap();
+    let status = sup.put_sandbox(sandbox(SB, DIGEST_1)).unwrap();
+    assert_eq!((status.state, status.address.as_deref()), (SandboxState::Starting, None));
+    assert!(vmm.log().is_empty(), "put must not boot synchronously");
+
+    sup.reconcile().await;
+    let status = sup.sandbox_status(SB).unwrap();
+    assert_eq!(status.state, SandboxState::Running);
+    let [id] = vmm.sandbox_ids(SB).try_into().unwrap();
+    let spec = vmm.spec(&id);
+    assert_eq!((spec.repo.as_str(), spec.image_digest.as_str(), spec.hostname.as_str()), ("aho.sandbox", DIGEST_1, SB));
+    assert_eq!((spec.cpus, spec.mem_mib), (Some(2), Some(2048)), "the sandbox's resources, not the backend defaults");
+    let volume = spec.volume.as_ref().unwrap();
+    assert_eq!((&volume.disk, volume.size_mb), (&DiskId::Sandbox(SB.into()), 10240));
+    assert_eq!(spec.guest.volume.as_ref().unwrap().mount, SANDBOX_WORKSPACE);
+    assert_eq!(spec.guest.command, None, "the image's idle command runs");
+    assert_eq!(spec.guest.env["ANTHROPIC_API_KEY"], "sk-ant-1");
+    assert_eq!(spec.guest.env["PORT"], "3000");
+    assert_eq!(spec.guest.env["HTTPS_PROXY"], format!("http://{}:3128", spec.lease.gateway));
+    assert_eq!(status.address, Some(vmm.endpoint_of(&id).to_string()));
+    assert_eq!(sup.sandbox_address(SB).unwrap(), Some(vmm.endpoint_of(&id)));
+
+    // One address pool for deployments and sandboxes; the sandbox's own allowlist.
+    let mut ips: Vec<_> = vmm.fake.lock().specs.values().map(|s| s.lease.ip).collect();
+    ips.sort();
+    ips.dedup();
+    assert_eq!(ips.len(), 3);
+    let policy = egress.get(IpAddr::V4(spec.lease.ip)).unwrap();
+    assert!(policy.allows("api.anthropic.com") && policy.allows("api.github.com"));
+    assert!(!policy.allows("api.stripe.com") && !policy.allows("example.com"));
+
+    let before = vmm.log().len();
+    sup.reconcile().await;
+    assert_eq!(vmm.log().len(), before, "nothing to do");
+}
+
+#[tokio::test]
+async fn stopping_keeps_the_disk_and_starting_again_reuses_it() {
+    let (sup, vmm, egress) = supervisor(Duration::ZERO);
+    sup.put_sandbox(sandbox(SB, DIGEST_1)).unwrap();
+    sup.reconcile().await;
+    let [first] = vmm.sandbox_ids(SB).try_into().unwrap();
+    let ip = vmm.spec(&first).lease.ip;
+
+    let status = sup.stop_sandbox(SB).unwrap();
+    assert_eq!((status.state, status.address), (SandboxState::Stopped, None));
+    assert!(matches!(sup.sandbox_exec(SB).await, Err(SupervisorError::NotRunning(_))));
+    sup.reconcile().await;
+    assert!(vmm.sandbox_ids(SB).is_empty());
+    assert!(vmm.log().contains(&format!("stop {first}")));
+    assert!(!vmm.log().iter().any(|l| l.starts_with("destroy")), "a stop keeps the disk");
+    assert!(egress.get(IpAddr::V4(ip)).is_none(), "policy outlived the VM");
+    sup.reconcile().await;
+    assert_eq!(sup.sandbox_status(SB).unwrap().state, SandboxState::Stopped, "stays stopped");
+    assert!(vmm.sandbox_ids(SB).is_empty());
+
+    sup.put_sandbox(sandbox(SB, DIGEST_1)).unwrap();
+    sup.reconcile().await;
+    let [second] = vmm.sandbox_ids(SB).try_into().unwrap();
+    assert_ne!(second, first);
+    assert_eq!(vmm.spec(&second).volume.unwrap().disk, DiskId::Sandbox(SB.into()));
+    assert_eq!(sup.sandbox_status(SB).unwrap().state, SandboxState::Running);
+}
+
+#[tokio::test]
+async fn removing_stops_then_destroys_the_disk_and_forgets() {
+    let (sup, vmm, _) = supervisor(Duration::ZERO);
+    sup.put_sandbox(sandbox(SB, DIGEST_1)).unwrap();
+    sup.reconcile().await;
+    let [id] = vmm.sandbox_ids(SB).try_into().unwrap();
+
+    sup.remove_sandbox(SB).unwrap();
+    assert!(matches!(sup.sandbox_status(SB), Err(SupervisorError::NoSandbox(_))));
+    assert!(matches!(sup.stop_sandbox(SB), Err(SupervisorError::NoSandbox(_))));
+    sup.reconcile().await;
+    let log = vmm.log();
+    let pos = |needle: &str| log.iter().position(|l| l == needle).unwrap();
+    assert!(pos(&format!("stop {id}")) < pos(&format!("destroy sandbox/{SB}")), "{log:?}");
+    sup.reconcile().await;
+    assert_eq!(vmm.log(), log, "done once");
+
+    // A slug this agent never saw (it restarted) still loses its disk; bad slugs are refused.
+    sup.remove_sandbox("old-box").unwrap();
+    sup.reconcile().await;
+    assert_eq!(vmm.log().last().unwrap(), "destroy sandbox/old-box");
+    assert!(matches!(sup.remove_sandbox("../x"), Err(SupervisorError::Invalid(_))));
+    assert!(matches!(sup.put_sandbox(sandbox("Bad.Slug", DIGEST_1)), Err(SupervisorError::Invalid(_))));
+}
+
+#[tokio::test]
+async fn a_sandbox_recreated_before_its_removal_ran_never_boots_from_the_old_disk() {
+    let (sup, vmm, _) = supervisor(Duration::ZERO);
+    sup.put_sandbox(sandbox(SB, DIGEST_1)).unwrap();
+    sup.reconcile().await;
+    let [old] = vmm.sandbox_ids(SB).try_into().unwrap();
+    sup.remove_sandbox(SB).unwrap();
+    assert_eq!(sup.put_sandbox(sandbox(SB, DIGEST_2)).unwrap().state, SandboxState::Starting);
+    sup.reconcile().await;
+    let log = vmm.log();
+    let [new] = vmm.sandbox_ids(SB).try_into().unwrap();
+    let pos = |needle: &str| log.iter().position(|l| l == needle).unwrap();
+    assert!(pos(&format!("stop {old}")) < pos(&format!("destroy sandbox/{SB}")));
+    assert!(pos(&format!("destroy sandbox/{SB}")) < pos(&format!("start sandbox {SB} {new}")), "{log:?}");
+    assert_eq!(sup.sandbox_status(SB).unwrap().state, SandboxState::Running);
+}
+
+#[tokio::test]
+async fn a_changed_spec_replaces_the_vm_and_keeps_the_disk() {
+    let (sup, vmm, _) = supervisor(Duration::ZERO);
+    sup.put_sandbox(sandbox(SB, DIGEST_1)).unwrap();
+    sup.reconcile().await;
+    let [old] = vmm.sandbox_ids(SB).try_into().unwrap();
+
+    // The same spec again changes nothing.
+    assert_eq!(sup.put_sandbox(sandbox(SB, DIGEST_1)).unwrap().state, SandboxState::Running);
+    let before = vmm.log();
+    sup.reconcile().await;
+    assert_eq!(vmm.log(), before);
+
+    let mut changed = sandbox(SB, DIGEST_1);
+    changed.env.insert("GITHUB_TOKEN".into(), "ghp_1".into());
+    assert_eq!(sup.put_sandbox(changed).unwrap().state, SandboxState::Starting);
+    sup.reconcile().await;
+    let [new] = vmm.sandbox_ids(SB).try_into().unwrap();
+    assert_ne!(new, old);
+    let log = vmm.log();
+    let pos = |needle: &str| log.iter().position(|l| l == needle).unwrap();
+    assert!(pos(&format!("stop {old}")) < pos(&format!("start sandbox {SB} {new}")), "one VM on the disk at a time");
+    assert!(!log.iter().any(|l| l.starts_with("destroy")));
+    assert_eq!(vmm.spec(&new).guest.env["GITHUB_TOKEN"], "ghp_1");
+    assert_eq!(sup.sandbox_status(SB).unwrap().state, SandboxState::Running);
+}
+
+#[tokio::test]
+async fn a_crashed_sandbox_vm_is_rebooted() {
+    let (sup, vmm, _) = supervisor(Duration::ZERO);
+    sup.put_sandbox(sandbox(SB, DIGEST_1)).unwrap();
+    sup.reconcile().await;
+    let [dead] = vmm.sandbox_ids(SB).try_into().unwrap();
+    vmm.crash(&dead);
+    sup.reconcile().await;
+    let [alive] = vmm.sandbox_ids(SB).try_into().unwrap();
+    assert_ne!(alive, dead);
+    assert!(vmm.log().contains(&format!("stop {dead}")), "the dead VM is cleaned up");
+    assert_eq!(sup.sandbox_status(SB).unwrap().state, SandboxState::Running);
+}
+
+#[tokio::test]
+async fn repeated_boot_failures_report_failed_until_a_boot_succeeds() {
+    let (sup, vmm, _) = supervisor(Duration::ZERO);
+    vmm.fake.lock().fail_start = true;
+    sup.put_sandbox(sandbox(SB, DIGEST_1)).unwrap();
+    sup.reconcile().await;
+    let status = sup.sandbox_status(SB).unwrap();
+    assert_eq!((status.state, status.error), (SandboxState::Starting, None), "one failure is not yet failed");
+    sup.reconcile().await;
+    let status = sup.sandbox_status(SB).unwrap();
+    assert_eq!(status.state, SandboxState::Failed);
+    assert!(status.error.unwrap().contains("image pull failed"));
+
+    // Still retried; nothing leaked, so the first boot that works gets the first address.
+    vmm.fake.lock().fail_start = false;
+    sup.reconcile().await;
+    let status = sup.sandbox_status(SB).unwrap();
+    assert_eq!((status.state, status.error), (SandboxState::Running, None));
+    let [id] = vmm.sandbox_ids(SB).try_into().unwrap();
+    assert_eq!(vmm.spec(&id).lease.ip.octets()[3], 2);
+
+    // A VM that keeps dying right after boot fails the same way.
+    vmm.crash(&id);
+    vmm.fake.lock().fail_start = true;
+    sup.reconcile().await;
+    sup.reconcile().await;
+    assert_eq!(sup.sandbox_status(SB).unwrap().state, SandboxState::Failed);
+    // A put (the owner starting it again) clears the failure count.
+    assert_eq!(sup.put_sandbox(sandbox(SB, DIGEST_1)).unwrap().state, SandboxState::Starting);
 }

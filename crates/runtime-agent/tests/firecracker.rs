@@ -1,6 +1,6 @@
 //! The Firecracker backend end to end with fake host programs (shell scripts that record their
 //! arguments): image preparation, disks, config drive, tap, cgroup, nftables, VMM process,
-//! the vsock control connection, and teardown.
+//! the vsock control and exec connections, sandbox replicas, and teardown.
 // Helpers outside `#[test]` fns are test code too.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -10,14 +10,16 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use cloud_api::exec::ExecRequest;
 use cloud_contract::ledger::Stage;
-use cloud_contract::manifest::Health;
 use cloud_runtime::firecracker::{Firecracker, FirecrackerConfig};
 use cloud_runtime::guest::control::{self, Client, Control, ProcessState};
+use cloud_runtime::guest::exec::{self, ExecContext, collect};
+use cloud_runtime::guest::process::{ReapMode, Reaper};
 use cloud_runtime::guest::{GuestConfig, ImageConfig, VOLUME_DEVICE, VolumeMount};
 use cloud_runtime::image::{ImagePrograms, ImageStoreConfig};
 use cloud_runtime::net::Allocator;
-use cloud_runtime::vmm::{ReplicaSpec, Vmm, VmmError, VolumeSpec};
+use cloud_runtime::vmm::{DiskId, ReplicaSpec, Vmm, VmmError, VolumeSpec};
 use futures::future::BoxFuture;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
@@ -127,23 +129,25 @@ fn spec(alloc: &mut Allocator, id: &str, index: u16, volume: bool) -> ReplicaSpe
     let lease = alloc.allocate().unwrap();
     ReplicaSpec {
         id: id.into(),
-        project: "acme-shop".into(),
-        stage: Stage::Live,
-        process: "worker".into(),
-        index,
-        release: "r1".into(),
+        repo: "acme-shop".into(),
         image_digest: DIGEST.into(),
+        hostname: format!("worker-{index}"),
+        labels: vec![],
         guest: GuestConfig {
             process: "worker".into(),
             command: None,
             image: ImageConfig::default(),
             env: BTreeMap::from([("STRIPE_KEY".into(), "sk_live_1".into())]),
             port: None,
-            health: Health::Command { argv: vec!["true".into()] },
             volume: volume.then(|| VolumeMount { device: VOLUME_DEVICE.into(), mount: "/data".into() }),
             dns: vec![lease.gateway],
         },
-        volume: volume.then_some(VolumeSpec { size_mb: 256 }),
+        volume: volume.then(|| VolumeSpec {
+            disk: DiskId::Process { project: "acme-shop".into(), stage: Stage::Live, process: "worker".into(), index },
+            size_mb: 256,
+        }),
+        cpus: None,
+        mem_mib: None,
         lease,
     }
 }
@@ -306,4 +310,68 @@ async fn control_connections_go_through_the_vsock_socket() {
     assert_eq!(client.status().await.unwrap().pid, Some(1));
     assert!(matches!(fc.connect("vm-nope").await, Err(VmmError::NotFound(_))));
     fc.stop("vm-cccc01").await.unwrap();
+}
+
+#[tokio::test]
+async fn exec_streams_go_through_the_vsock_socket_on_the_exec_port() {
+    let host = Host::new();
+    let fc = host.backend();
+    fc.prepare_host().await.unwrap();
+    let mut alloc = Allocator::new("10.77.0.0/24".parse().unwrap()).unwrap();
+    let s = spec(&mut alloc, "vm-dddd01", 0, false);
+    let paths = fc.paths(&s);
+    fc.start(s).await.unwrap();
+
+    // Firecracker's multiplexer, then the guest's exec server behind it.
+    let listener = UnixListener::bind(&paths.vsock).unwrap();
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let mut stream = BufReader::new(stream);
+        let mut line = String::new();
+        stream.read_line(&mut line).await.unwrap();
+        assert_eq!(line, "CONNECT 53\n");
+        stream.get_mut().write_all(b"OK 1073741825\n").await.unwrap();
+        let reaper = Reaper::start(ReapMode::Own).unwrap();
+        exec::serve(stream, &reaper, &ExecContext::inherit(Duration::from_millis(200))).await.unwrap();
+    });
+    let request = ExecRequest { argv: vec!["sh".into(), "-c".into(), "echo inside".into()], pty: None, env: BTreeMap::new(), cwd: None };
+    let out = collect(fc.exec("vm-dddd01").await.unwrap(), request, 1024).await.unwrap();
+    assert_eq!((out.code, out.stdout.as_slice()), (0, &b"inside\n"[..]));
+    assert!(matches!(fc.exec("vm-nope").await, Err(VmmError::NotFound(_))));
+    fc.stop("vm-dddd01").await.unwrap();
+}
+
+#[tokio::test]
+async fn a_sandbox_replica_gets_its_repo_resources_and_its_own_disk_until_destroyed() {
+    let host = Host::new();
+    let fc = host.backend();
+    fc.prepare_host().await.unwrap();
+    let mut alloc = Allocator::new("10.77.0.0/24".parse().unwrap()).unwrap();
+    let mut s = spec(&mut alloc, "vm-eeee01", 0, false);
+    s.repo = "aho.sandbox".into();
+    s.hostname = "dev-box".into();
+    s.guest.volume = Some(VolumeMount { device: VOLUME_DEVICE.into(), mount: "/workspace".into() });
+    s.volume = Some(VolumeSpec { disk: DiskId::Sandbox("dev-box".into()), size_mb: 10240 });
+    (s.cpus, s.mem_mib) = (Some(4), Some(2048));
+    let paths = fc.paths(&s);
+    fc.start(s).await.unwrap();
+
+    assert!(host.log("skopeo.log").contains(&format!("copy docker://registry.test:5000/aho-cloud/aho.sandbox@{DIGEST} ")));
+    let disk = host.root.join("state/volumes/aho.sandboxes/dev-box.ext4");
+    assert_eq!(paths.volume.as_ref(), Some(&disk));
+    assert!(host.log("mkfs.log").contains(&format!("-q -F {} 10240M", disk.display())));
+    let config: serde_json::Value = serde_json::from_slice(&std::fs::read(&paths.config_file).unwrap()).unwrap();
+    assert_eq!(config["machine-config"]["vcpu_count"], 4, "the sandbox's vCPUs, not the backend default");
+    assert_eq!(config["machine-config"]["mem_size_mib"], 2048);
+    assert!(config["boot-source"]["boot_args"].as_str().unwrap().contains(":dev-box:eth0:"));
+    let cg = host.root.join("cgroup/aho-cloud/vm-eeee01");
+    assert_eq!(std::fs::read_to_string(cg.join("cpu.max")).unwrap(), "400000 100000");
+    assert_eq!(std::fs::read_to_string(cg.join("memory.max")).unwrap(), ((2048u64 + 64) * 1024 * 1024).to_string());
+
+    fc.stop("vm-eeee01").await.unwrap();
+    assert!(disk.exists(), "stopping keeps the disk");
+    fc.destroy_volume(&DiskId::Sandbox("dev-box".into())).await.unwrap();
+    assert!(!disk.exists());
+    fc.destroy_volume(&DiskId::Sandbox("dev-box".into())).await.unwrap();
+    assert!(matches!(fc.destroy_volume(&DiskId::Sandbox("../replicas".into())).await, Err(VmmError::NotFound(_))));
 }

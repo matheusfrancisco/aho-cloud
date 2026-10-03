@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -72,14 +72,20 @@ impl Reaper {
     /// Spawns `cmd` as the leader of a new process group; the receiver yields its exit code.
     pub fn spawn(&self, cmd: &mut Command) -> io::Result<(u32, oneshot::Receiver<i32>)> {
         cmd.process_group(0);
+        self.spawn_child(|| cmd.spawn()).map(|(child, exited)| (child.id(), exited))
+    }
+
+    /// Runs `spawn` (which starts exactly one child) so the child is registered before it can
+    /// be reaped; the receiver yields its exit code. The returned handle is for its stdio and
+    /// pid only: this reaper collects the child, nobody may wait on it.
+    pub fn spawn_child(&self, spawn: impl FnOnce() -> io::Result<Child>) -> io::Result<(Child, oneshot::Receiver<i32>)> {
         // Holding the lock across spawn means the child cannot be reaped before it is registered.
         let mut waiters = self.waiters.lock();
-        let child = cmd.spawn()?;
-        let pid = child.id();
-        let raw = i32::try_from(pid).map_err(io::Error::other)?;
+        let child = spawn()?;
+        let raw = i32::try_from(child.id()).map_err(io::Error::other)?;
         let (tx, rx) = oneshot::channel();
         waiters.insert(raw, tx);
-        Ok((pid, rx))
+        Ok((child, rx))
     }
 
     /// One non-blocking pass: collects every exited child this reaper is responsible for.

@@ -2,31 +2,45 @@
 //! for local stacks on machines without KVM (macOS).
 //!
 //! It is not an isolation boundary. The egress allowlist is not enforced (no proxy, no
-//! nftables), resource ceilings are Docker's `--memory`/`--cpus`/`--pids-limit`, and
-//! containers share the Docker daemon's kernel. Everything the supervisor relies on still
-//! holds: images run pinned by digest, secrets reach the process only through an env file
-//! (never argv), volumes persist per `(project, stage, process, index)`, the replica's port is
-//! published on [`DockerConfig::publish_ip`] and reported as its endpoint, and command health
-//! checks and restarts speak the same control protocol as `cloud-guest`, answered on the host
-//! with `docker exec` and `docker restart`.
+//! nftables), resource ceilings are Docker's `--memory`/`--cpus`/`--pids-limit`, volume sizes
+//! are not enforced, and containers share the Docker daemon's kernel. Everything the
+//! supervisor relies on still holds: images run pinned by digest, secrets reach the process
+//! only through an env file (never argv), volumes persist per [`DiskId`] (named by
+//! [`volume_name`]), the replica's port is published on [`DockerConfig::publish_ip`] and
+//! reported as its endpoint, command health checks and restarts speak the same control
+//! protocol as `cloud-guest`, answered on the host with `docker exec` and `docker restart`, and
+//! exec sessions run `cloud-guest exec` inside the container ([`exec_args`]), which must have it
+//! at [`GUEST_PROGRAM`].
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::Write as _;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::process::Stdio;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use futures::future::BoxFuture;
 use parking_lot::Mutex;
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, BufReader, ReadBuf};
+use tokio::process::{Child, ChildStdin, ChildStdout};
 
 use crate::exec;
 use crate::guest::control::{self, Control, ProcessState};
+use crate::guest::is_env_name;
 use crate::image::{digest_hex, pinned_ref};
-use crate::vmm::{GuestConn, ReplicaSpec, Started, Vmm, VmmError};
+use crate::vmm::{DiskId, GuestConn, ReplicaSpec, Started, Vmm, VmmError};
 
 /// Label on every container this backend owns; [`Docker::prepare`] removes stale ones.
 pub const MANAGED_LABEL: &str = "aho-cloud.managed";
+
+/// Where containers carry `cloud-guest` (sandbox images install it there).
+pub const GUEST_PROGRAM: &str = "/usr/local/bin/cloud-guest";
+
+/// How long a dropped exec stream's `docker exec` gets to finish (the guest hangs its session
+/// up on the closed stdin) before it is killed.
+const EXEC_EXIT_GRACE: Duration = Duration::from_secs(5);
 
 /// Variables the microVM path points at the host egress proxy. No proxy runs next to Docker,
 /// so passing them would break every outbound call.
@@ -39,7 +53,8 @@ const RESTART_GRACE_SECS: &str = "10";
 pub struct DockerConfig {
     /// The `docker` CLI.
     pub docker: PathBuf,
-    /// Registry repository per project as the Docker daemon reaches it; `{project}` is substituted.
+    /// Registry repository template as the Docker daemon reaches it; `{project}` is substituted
+    /// with the replica's repo.
     pub repo_template: String,
     /// Holds one env file per replica (`env/<id>.env`, mode 0600).
     pub state_dir: PathBuf,
@@ -47,6 +62,7 @@ pub struct DockerConfig {
     pub publish_ip: Ipv4Addr,
     /// Docker network replicas join; `None` uses the daemon's default bridge.
     pub network: Option<String>,
+    /// Defaults; a replica may carry its own.
     pub mem_mib: u32,
     pub cpus: u8,
     pub pids_max: u32,
@@ -90,14 +106,10 @@ impl Docker {
     /// `docker run` arguments for `spec`, reading its environment from `env_file`.
     pub fn run_args(&self, spec: &ReplicaSpec, env_file: &Path) -> Result<Vec<String>, VmmError> {
         digest_hex(&spec.image_digest)?;
-        let mut args: Vec<String> = vec!["run".into(), "-d".into(), "--name".into(), spec.id.clone()];
-        for (key, value) in [
-            (MANAGED_LABEL, "1"),
-            ("aho-cloud.project", spec.project.as_str()),
-            ("aho-cloud.stage", spec.stage.as_str()),
-            ("aho-cloud.process", spec.process.as_str()),
-            ("aho-cloud.release", spec.release.as_str()),
-        ] {
+        let mut args: Vec<String> =
+            vec!["run".into(), "-d".into(), "--name".into(), spec.id.clone(), "--hostname".into(), spec.hostname.clone()];
+        let labels = std::iter::once((MANAGED_LABEL, "1")).chain(spec.labels.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+        for (key, value) in labels {
             args.push("--label".into());
             args.push(format!("{key}={value}"));
         }
@@ -105,9 +117,9 @@ impl Docker {
             "--env-file".into(),
             env_file.display().to_string(),
             "--memory".into(),
-            format!("{}m", self.cfg.mem_mib),
+            format!("{}m", spec.mem_mib.unwrap_or(self.cfg.mem_mib)),
             "--cpus".into(),
-            self.cfg.cpus.to_string(),
+            spec.cpus.unwrap_or(self.cfg.cpus).to_string(),
             "--pids-limit".into(),
             self.cfg.pids_max.to_string(),
             // The supervisor replaces exited replicas; Docker must not restart them behind it.
@@ -120,10 +132,10 @@ impl Docker {
         if let Some(port) = spec.guest.port {
             args.extend(["-p".into(), format!("{}::{port}", self.cfg.publish_ip)]);
         }
-        if let Some(volume) = &spec.guest.volume {
-            args.extend(["-v".into(), format!("{}:{}", volume_name(spec), volume.mount)]);
+        if let (Some(volume), Some(mount)) = (&spec.volume, &spec.guest.volume) {
+            args.extend(["-v".into(), format!("{}:{}", volume_name(&volume.disk), mount.mount)]);
         }
-        let image = pinned_ref(&self.cfg.repo_template, &spec.project, &spec.image_digest);
+        let image = pinned_ref(&self.cfg.repo_template, &spec.repo, &spec.image_digest);
         match &spec.guest.command {
             Some(argv) => {
                 let (program, rest) = argv.split_first().ok_or_else(|| VmmError::Docker("empty command".into()))?;
@@ -153,9 +165,19 @@ impl Docker {
     }
 }
 
-/// `aho-cloud-<project>-<stage>-<process>-<index>`: the same disk across restarts and releases.
-pub fn volume_name(spec: &ReplicaSpec) -> String {
-    format!("aho-cloud-{}-{}-{}-{}", spec.project, spec.stage.as_str(), spec.process, spec.index)
+/// The Docker volume of `disk`: `aho-cloud-<project>-<stage>-<process>-<index>` (the same disk
+/// across restarts and releases) or `aho-cloud-sandbox.<slug>` (a `.`, which no deployment
+/// volume name has).
+pub fn volume_name(disk: &DiskId) -> String {
+    match disk {
+        DiskId::Process { project, stage, process, index } => format!("aho-cloud-{project}-{}-{process}-{index}", stage.as_str()),
+        DiskId::Sandbox(slug) => format!("aho-cloud-sandbox.{slug}"),
+    }
+}
+
+/// `docker` arguments of an exec session in container `id`.
+pub fn exec_args(id: &str) -> [&str; 5] {
+    ["exec", "-i", id, GUEST_PROGRAM, "exec"]
 }
 
 /// The replica's environment without the egress-proxy variables, as `KEY=value` lines.
@@ -163,9 +185,7 @@ pub fn volume_name(spec: &ReplicaSpec) -> String {
 pub fn env_file_contents(env: &BTreeMap<String, String>) -> Result<String, VmmError> {
     let mut out = String::new();
     for (key, value) in env.iter().filter(|(k, _)| !PROXY_ENV.contains(&k.as_str())) {
-        let valid_key = key.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-            && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
-        if !valid_key {
+        if !is_env_name(key) {
             return Err(VmmError::Docker(format!("environment name `{key}` cannot go in an env file")));
         }
         if value.contains(['\n', '\r', '\0']) {
@@ -210,7 +230,7 @@ impl Vmm for Docker {
             let env_file = self.env_file(&spec.id);
             let args = self.run_args(&spec, &env_file)?;
             write_private(&env_file, &env_file_contents(&spec.guest.env)?)?;
-            let image = pinned_ref(&self.cfg.repo_template, &spec.project, &spec.image_digest);
+            let image = pinned_ref(&self.cfg.repo_template, &spec.repo, &spec.image_digest);
             let started = async {
                 exec::run(&self.cfg.docker, ["pull", "-q", image.as_str()]).await?;
                 exec::run(&self.cfg.docker, &args).await?;
@@ -264,8 +284,100 @@ impl Vmm for Docker {
         })
     }
 
+    fn exec<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<GuestConn, VmmError>> {
+        Box::pin(async move {
+            let mut child = tokio::process::Command::new(&self.cfg.docker)
+                .args(exec_args(id))
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .kill_on_drop(true)
+                .spawn()
+                .map_err(|e| VmmError::Docker(format!("docker exec: {e}")))?;
+            let (Some(stdin), Some(stdout), Some(stderr)) = (child.stdin.take(), child.stdout.take(), child.stderr.take()) else {
+                return Err(VmmError::Docker("docker exec: no stdio".into()));
+            };
+            let container = id.to_owned();
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    tracing::debug!(id = %container, "exec: {line}");
+                }
+            });
+            Ok(Box::new(ExecPipe { stdin: Some(stdin), stdout, child: Some(child) }) as GuestConn)
+        })
+    }
+
+    fn destroy_volume<'a>(&'a self, disk: &'a DiskId) -> BoxFuture<'a, Result<(), VmmError>> {
+        Box::pin(async move {
+            let name = volume_name(disk);
+            match exec::run(&self.cfg.docker, ["volume", "rm", name.as_str()]).await {
+                Ok(_) => Ok(()),
+                Err(e) if e.detail.to_ascii_lowercase().contains("no such volume") => Ok(()),
+                Err(e) => Err(e.into()),
+            }
+        })
+    }
+
     fn endpoint(&self, id: &str, ip: Ipv4Addr, port: u16) -> SocketAddr {
         self.published.lock().get(id).and_then(|ports| ports.get(&port).copied()).unwrap_or_else(|| SocketAddr::new(ip.into(), port))
+    }
+
+    fn guest_program(&self) -> &str {
+        GUEST_PROGRAM
+    }
+}
+
+/// One `docker exec -i … cloud-guest exec` as a duplex stream: writes go to its stdin, reads
+/// come from its stdout. Dropping it closes stdin (the guest ends the session) and reaps the
+/// CLI, killing it if it lingers.
+struct ExecPipe {
+    stdin: Option<ChildStdin>,
+    stdout: ChildStdout,
+    child: Option<Child>,
+}
+
+impl AsyncRead for ExecPipe {
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut ReadBuf<'_>) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.stdout).poll_read(cx, buf)
+    }
+}
+
+impl AsyncWrite for ExecPipe {
+    fn poll_write(mut self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
+        match self.stdin.as_mut() {
+            Some(stdin) => Pin::new(stdin).poll_write(cx, buf),
+            None => Poll::Ready(Err(std::io::ErrorKind::BrokenPipe.into())),
+        }
+    }
+
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        match self.stdin.as_mut() {
+            Some(stdin) => Pin::new(stdin).poll_flush(cx),
+            None => Poll::Ready(Ok(())),
+        }
+    }
+
+    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        match self.stdin.as_mut() {
+            Some(stdin) => Pin::new(stdin).poll_shutdown(cx),
+            None => Poll::Ready(Ok(())),
+        }
+    }
+}
+
+impl Drop for ExecPipe {
+    fn drop(&mut self) {
+        drop(self.stdin.take());
+        let (Some(mut child), Ok(runtime)) = (self.child.take(), tokio::runtime::Handle::try_current()) else {
+            // Without a runtime the child is killed on drop.
+            return;
+        };
+        runtime.spawn(async move {
+            if tokio::time::timeout(EXEC_EXIT_GRACE, child.wait()).await.is_err() {
+                let _ = child.kill().await;
+            }
+        });
     }
 }
 

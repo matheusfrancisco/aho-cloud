@@ -1,5 +1,5 @@
-// The organization's home: its projects with a status each, a terminal quick start, and the
-// latest ledger activity across the org.
+// The organization's home: its projects with a status each, its sandboxes, a terminal quick
+// start, and the latest ledger activity across the org.
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { StatusBadge } from "../components/ApprovalCard";
@@ -11,6 +11,7 @@ import { type Activity, filterRows, PROJECT_STATUSES, type ProjectRow, projectRo
 import { Ago, Badge, CopyButton, ErrorBox, Loading } from "../ui/common";
 import { useLoad } from "../ui/hooks";
 import { EmptyIllustration, ExternalIcon, PlusIcon, SearchIcon } from "../ui/icons";
+import { SANDBOX_PITCH, SandboxStateBadge } from "./SandboxesPage";
 
 const STATUS_LABEL: Record<ProjectStatus, string> = { live: "Live", preview: "Preview", building: "Building", idle: "Idle" };
 const STATUS_TONE: Record<ProjectStatus, "ok" | "info" | "warn" | "muted"> = { live: "ok", preview: "info", building: "warn", idle: "muted" };
@@ -33,6 +34,47 @@ function TerminalCard({ project }: { project: string }) {
         <pre>{snippet}</pre>
         <CopyButton text={snippet} label="Copy commands" />
       </div>
+    </section>
+  );
+}
+
+/** The dashboard shows this many sandboxes; the Sandboxes page lists them all. */
+const SANDBOXES_SHOWN = 5;
+
+function SandboxesCard({ org }: { org: string }) {
+  const { createSandbox } = useShell();
+  const list = useLoad(() => api.sandboxes(org), [org]);
+  const sandboxes = list.data ?? [];
+  return (
+    <section className="card side-card flush" aria-label="Sandboxes">
+      <div className="card-title row">
+        <h2>Sandboxes</h2>
+        {list.data !== undefined && <span className="chip-count">{sandboxes.length}</span>}
+        <span className="grow" />
+        <Link to={`/orgs/${encodeURIComponent(org)}/sandboxes`} className="small">
+          View all
+        </Link>
+      </div>
+      <ErrorBox error={list.error} />
+      {list.data === undefined ? null : sandboxes.length === 0 ? (
+        <div className="pad">
+          <p className="hint">{SANDBOX_PITCH}</p>
+          <button type="button" className="soft" onClick={createSandbox}>
+            <PlusIcon /> New sandbox
+          </button>
+        </div>
+      ) : (
+        <ul className="activity">
+          {sandboxes.slice(0, SANDBOXES_SHOWN).map((s) => (
+            <li key={s.slug} className="row small">
+              <Link to={`/sandboxes/${encodeURIComponent(s.slug)}`}>
+                <strong>{s.slug}</strong>
+              </Link>
+              <SandboxStateBadge state={s.state} />
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
@@ -176,6 +218,7 @@ export function OrgPage() {
         )}
       </section>
       <div className="side-column">
+        <SandboxesCard org={org} />
         <TerminalCard project={rows[0]?.project.slug ?? "<project>"} />
         <ActivityCard activity={loaded.data?.activity ?? []} />
       </div>

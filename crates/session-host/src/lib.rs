@@ -15,18 +15,30 @@
 //!    `deploy.json` and draft), all `cloud-workdir` on the project directory. A tampered session
 //!    log refuses the package with `422 invalid_session`, so a deploy never loses its
 //!    attestation silently.
+//! 5. Sandboxes (only with a runtime agent configured; otherwise these routes answer 503
+//!    `sandboxes_disabled`). The host reaches the runtime agent's exec socket with its service
+//!    token ([`runtime`]):
+//!    * `SANDBOX_TERMINALS` mints a single-use terminal token bound to one exec request
+//!      (lifetime at most [`terminal::TERMINAL_TOKEN_TTL`]); `GET /terminal/{sandbox}?token=`
+//!      relays binary exec frames between the browser and that exec session ([`terminal`]).
+//!    * `SANDBOX_CHATS` is `WORKSPACES` for the aho inside a sandbox: `GET
+//!      /sandbox-rpc/{chat}?token=` is the same rpc bridge, its child an exec session running
+//!      `aho --project /workspace rpc [--session <id>]`, the session id remembered per
+//!      `(sandbox, user)`.
 
 #![forbid(unsafe_code)]
 
 pub mod bridge;
 mod content;
 pub mod limits;
+pub mod runtime;
 pub mod server;
 pub mod spawn;
+pub mod terminal;
 pub mod token;
 pub mod workspace;
 
 pub use limits::{Denied, Limits};
-pub use server::{Config, ConfigError, RPC_ROUTE, SessionHost};
+pub use server::{Config, ConfigError, RPC_ROUTE, SANDBOX_RPC_ROUTE, SandboxConfig, SessionHost, TERMINAL_ROUTE};
 pub use spawn::{CommandTemplate, Process, SpawnSpec, Spawned, Spawner, TokioSpawner};
-pub use token::{Claims, TokenError, TokenKey};
+pub use token::{Claims, TerminalClaims, TokenError, TokenKey};

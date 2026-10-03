@@ -288,6 +288,68 @@ impl Client {
     pub async fn set_secret(&self, project: &str, body: &SetSecret) -> Result<SecretView, ClientError> {
         self.call(Method::PUT, routes::SECRETS, &[("p", project)], body).await
     }
+
+    // ---- sandboxes ----------------------------------------------------------------------------
+
+    pub async fn org_sandboxes(&self, org: &str) -> Result<Vec<Sandbox>, ClientError> {
+        self.get(routes::ORG_SANDBOXES, &[("org", org)]).await
+    }
+
+    pub async fn create_sandbox(&self, org: &str, body: &CreateSandbox) -> Result<Sandbox, ClientError> {
+        self.post(routes::ORG_SANDBOXES, &[("org", org)], body).await
+    }
+
+    pub async fn sandbox(&self, slug: &str) -> Result<Sandbox, ClientError> {
+        self.get(routes::SANDBOX, &[("s", slug)]).await
+    }
+
+    /// Destroys the VM and its disk.
+    pub async fn delete_sandbox(&self, slug: &str) -> Result<(), ClientError> {
+        self.send(self.request(Method::DELETE, self.url(routes::SANDBOX, &[("s", slug)]))).await
+    }
+
+    pub async fn start_sandbox(&self, slug: &str) -> Result<Sandbox, ClientError> {
+        self.send(self.request(Method::POST, self.url(routes::SANDBOX_START, &[("s", slug)]))).await
+    }
+
+    pub async fn stop_sandbox(&self, slug: &str) -> Result<Sandbox, ClientError> {
+        self.send(self.request(Method::POST, self.url(routes::SANDBOX_STOP, &[("s", slug)]))).await
+    }
+
+    pub async fn set_sandbox_settings(&self, slug: &str, body: &SandboxSettings) -> Result<Sandbox, ClientError> {
+        self.call(Method::PUT, routes::SANDBOX_SETTINGS, &[("s", slug)], body).await
+    }
+
+    /// A single-use terminal WebSocket; see [`crate::exec`] for its frames.
+    pub async fn sandbox_terminal(&self, slug: &str, body: &TerminalRequest) -> Result<TerminalAccess, ClientError> {
+        self.post(routes::SANDBOX_TERMINAL, &[("s", slug)], body).await
+    }
+
+    pub async fn sandbox_chat(&self, slug: &str, body: &StartSandboxChat) -> Result<SandboxChat, ClientError> {
+        self.post(routes::SANDBOX_CHAT, &[("s", slug)], body).await
+    }
+
+    pub async fn sandbox_files(&self, slug: &str) -> Result<FileTree, ClientError> {
+        self.get(routes::SANDBOX_FILES, &[("s", slug)]).await
+    }
+
+    pub async fn sandbox_file(&self, slug: &str, path: &str) -> Result<FileContent, ClientError> {
+        let url = format!("{}?path={}", self.url(routes::SANDBOX_FILE, &[("s", slug)]), seg(path));
+        self.send(self.request(Method::GET, url)).await
+    }
+
+    pub async fn sandbox_env(&self, slug: &str) -> Result<Vec<EnvVarView>, ClientError> {
+        self.get(routes::SANDBOX_ENV, &[("s", slug)]).await
+    }
+
+    /// The value travels only in the request body.
+    pub async fn set_sandbox_env(&self, slug: &str, body: &SetEnvVar) -> Result<EnvVarView, ClientError> {
+        self.call(Method::PUT, routes::SANDBOX_ENV, &[("s", slug)], body).await
+    }
+
+    pub async fn delete_sandbox_env(&self, slug: &str, name: &str) -> Result<(), ClientError> {
+        self.send(self.request(Method::DELETE, self.url(routes::SANDBOX_ENV_VAR, &[("s", slug), ("name", name)]))).await
+    }
 }
 
 fn snippet(bytes: &[u8]) -> String {
@@ -439,5 +501,16 @@ mod tests {
         assert_eq!(seen.method, "PUT");
         assert!(!seen.uri.contains("s3cr3t"));
         assert!(String::from_utf8(seen.body).unwrap().contains("\"value\":\"s3cr3t-value\""));
+    }
+
+    #[tokio::test]
+    async fn sandbox_file_paths_and_env_names_are_encoded() {
+        let (url, log) = serve().await;
+        let c = Client::new(url, Some("t".into()));
+        let _ = c.sandbox_file("box", "src/a b?.rs").await;
+        let _ = c.delete_sandbox_env("box", "A/../B").await;
+        let seen = log.lock().await.clone();
+        assert_eq!(seen[0].uri, "/v1/sandboxes/box/file?path=src%2Fa%20b%3F.rs");
+        assert_eq!((seen[1].method.as_str(), seen[1].uri.as_str()), ("DELETE", "/v1/sandboxes/box/env/A%2F..%2FB"));
     }
 }

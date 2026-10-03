@@ -1,0 +1,11 @@
+# aho inside an aho cloud sandbox. The VM is the sandbox, so aho's tools run in its host world
+# (this VM). The model key comes from the sandbox's environment (ANTHROPIC_API_KEY or
+# OPENAI_API_KEY, set in the console under Settings → Environment), or from `aho login anthropic`
+# run in the terminal. This copy lives at ~/.aho/config.toml, on the persistent disk; edit it there.
+
+[model]
+name = "claude-sonnet-4-5"
+provider = "anthropic"
+
+[seams]
+world = "host"

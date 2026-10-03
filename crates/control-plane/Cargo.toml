@@ -1,6 +1,6 @@
 [package]
 name = "cloud-control-plane"
-description = "The aho cloud API server: auth (device flow, passkeys, device keys), orgs, projects, releases, approvals, domains, secrets, workspaces, and the internal routes the edge polls."
+description = "The aho cloud API server: auth (device flow, passkeys, device keys), orgs, projects, releases, approvals, domains, secrets, workspaces, sandboxes, and the internal routes the edge polls."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

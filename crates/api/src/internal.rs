@@ -32,6 +32,79 @@ pub mod routes {
     pub const WORKSPACE_FILES: &str = "/internal/v1/workspaces/files";
     /// session-host: `POST` a [`super::WorkspaceFileRef`] → [`crate::FileContent`].
     pub const WORKSPACE_FILE: &str = "/internal/v1/workspaces/file";
+    /// runtime-agent: `PUT` a [`super::SandboxSpec`] → [`super::SandboxStatus`] (want it running
+    /// with this spec; a changed spec replaces the VM, the disk is kept); `GET` → status;
+    /// `DELETE` → 204 (VM stopped, disk destroyed).
+    pub const SANDBOX: &str = "/internal/v1/sandboxes/{s}";
+    /// runtime-agent: `POST` → [`super::SandboxStatus`]: stop the VM, keep the disk.
+    pub const SANDBOX_STOP: &str = "/internal/v1/sandboxes/{s}/stop";
+    /// runtime-agent: `GET` WebSocket. The first message is a text [`crate::exec::ExecRequest`];
+    /// then [`crate::exec::Frame`]s as binary messages both ways (see [`crate::exec`]).
+    pub const SANDBOX_EXEC: &str = "/internal/v1/sandboxes/{s}/exec";
+    /// runtime-agent: `GET` → [`crate::FileTree`] of [`super::SANDBOX_WORKSPACE`].
+    pub const SANDBOX_FILES: &str = "/internal/v1/sandboxes/{s}/files";
+    /// runtime-agent: `GET ?path=` (relative to the workspace) → [`crate::FileContent`].
+    pub const SANDBOX_FILE: &str = "/internal/v1/sandboxes/{s}/file";
+    /// session-host: `POST` a [`super::SandboxTerminal`] → [`crate::TerminalAccess`].
+    pub const SANDBOX_TERMINALS: &str = "/internal/v1/sandbox-terminals";
+    /// session-host: `POST` a [`super::SandboxChatStart`] → [`crate::SandboxChat`].
+    pub const SANDBOX_CHATS: &str = "/internal/v1/sandbox-chats";
+}
+
+/// The persistent disk's mount point inside every sandbox, and the aho project there.
+pub const SANDBOX_WORKSPACE: &str = "/workspace";
+/// The registry repository (relative to the runtime's image-repo template) of sandbox images;
+/// it has a `.`, so no project slug can name it.
+pub const SANDBOX_IMAGE_REPO: &str = "aho.sandbox";
+
+/// Everything the runtime agent needs to run one sandbox.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SandboxSpec {
+    pub slug: String,
+    /// Substituted for `{project}` in the runtime's image-repo template.
+    pub image_repo: String,
+    /// `sha256:…`.
+    pub image_digest: String,
+    /// Added to the image environment of the VM and of every exec session (decrypted user vars).
+    pub env: BTreeMap<String, String>,
+    /// Hosts the VM may reach, enforced by the egress proxy (not by the Docker dev backend).
+    pub egress: Vec<String>,
+    /// Published to the edge (reported in [`SandboxStatus::address`]).
+    #[serde(default)]
+    pub port: Option<u16>,
+    pub cpus: u8,
+    pub mem_mib: u32,
+    pub disk_mib: u32,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SandboxStatus {
+    pub slug: String,
+    pub state: crate::SandboxState,
+    /// `ip:port` of [`SandboxSpec::port`] while running.
+    #[serde(default)]
+    pub address: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// Open a terminal for `user_id` in `sandbox`: the session host mints a short-lived, single-use
+/// token bound to exactly this request.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SandboxTerminal {
+    pub sandbox: String,
+    pub user_id: String,
+    pub exec: crate::exec::ExecRequest,
+}
+
+/// aho rpc to the aho inside `sandbox`, for `user_id` (resumes `session_id`, else the one this
+/// user last had there).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SandboxChatStart {
+    pub sandbox: String,
+    pub user_id: String,
+    #[serde(default)]
+    pub session_id: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

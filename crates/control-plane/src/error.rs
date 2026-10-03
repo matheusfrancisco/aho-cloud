@@ -40,6 +40,9 @@ pub enum AppError {
     /// A port (builder, runtime, session host, DNS) failed; the request may be retried.
     #[error("{0}")]
     Upstream(String),
+    /// A feature this deployment does not run; `code` names it (e.g. `sandboxes_disabled`).
+    #[error("{message}")]
+    Unavailable { code: &'static str, message: String },
     #[error("{0}")]
     Internal(String),
 }
@@ -58,6 +61,7 @@ impl AppError {
             AppError::Tainted(_) => "tainted",
             AppError::RateLimited(_) => "rate_limited",
             AppError::Upstream(_) | AppError::Internal(_) => "internal",
+            AppError::Unavailable { code, .. } => code,
         }
     }
 
@@ -73,6 +77,7 @@ impl AppError {
             AppError::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
             AppError::Upstream(_) => StatusCode::BAD_GATEWAY,
             AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::Unavailable { .. } => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 
@@ -117,6 +122,7 @@ impl From<StoreError> for AppError {
     fn from(e: StoreError) -> Self {
         match e {
             StoreError::Conflict(what) => AppError::Conflict(format!("{what} already exists")),
+            StoreError::Limit(message) => AppError::Conflict(message),
             StoreError::Backend(_) => AppError::Internal(e.to_string()),
         }
     }

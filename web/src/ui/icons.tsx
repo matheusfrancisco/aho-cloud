@@ -35,6 +35,26 @@ export const ProjectsIcon = () => (
   </Svg>
 );
 
+/** A terminal window: sandboxes. */
+export const SandboxIcon = () => (
+  <Svg>
+    <rect x="1.8" y="2.5" width="12.4" height="11" rx="1.5" />
+    <path d="m4.5 6.5 2 1.75-2 1.75M8 10.5h3.5" />
+  </Svg>
+);
+
+export const PlayIcon = () => (
+  <Svg>
+    <path d="M5 3.2v9.6L12.5 8 5 3.2Z" />
+  </Svg>
+);
+
+export const StopIcon = () => (
+  <Svg>
+    <rect x="4" y="4" width="8" height="8" rx="1" />
+  </Svg>
+);
+
 export const TeamIcon = () => (
   <Svg>
     <circle cx="6" cy="5.5" r="2.25" />

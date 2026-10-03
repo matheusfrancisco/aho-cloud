@@ -167,6 +167,46 @@ fn release_meta_of(row: &PgRow) -> Result<ReleaseMeta, StoreError> {
     })
 }
 
+fn sandbox_of(row: &PgRow) -> Result<SandboxRec, StoreError> {
+    let settings: String = get(row, "settings")?;
+    let state: String = get(row, "state")?;
+    Ok(SandboxRec {
+        slug: get(row, "slug")?,
+        org: get(row, "org")?,
+        created_by: get(row, "created_by")?,
+        created_at: u64_of(get(row, "created_at")?),
+        image: get(row, "image")?,
+        settings: serde_json::from_str(&settings).map_err(backend)?,
+        state: parse_sandbox_state(&state).ok_or_else(|| backend(format!("unknown sandbox state `{state}`")))?,
+        error: get(row, "error")?,
+        stops_at: get::<Option<i64>>(row, "stops_at")?.map(u64_of),
+        cpus: u8::try_from(get::<i64>(row, "cpus")?).map_err(backend)?,
+        mem_mib: u32::try_from(get::<i64>(row, "mem_mib")?).map_err(backend)?,
+        disk_mib: u32::try_from(get::<i64>(row, "disk_mib")?).map_err(backend)?,
+    })
+}
+
+fn env_var_of(row: &PgRow) -> Result<EnvVarRec, StoreError> {
+    Ok(EnvVarRec {
+        sandbox: get(row, "sandbox")?,
+        name: get(row, "name")?,
+        ciphertext: get(row, "ciphertext")?,
+        fingerprint: get(row, "fingerprint")?,
+        updated_at: u64_of(get(row, "updated_at")?),
+    })
+}
+
+/// Serializes writers of one name (a slug, an org's sandbox count) until the transaction ends.
+async fn lock_name(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, name: &str) -> Result<(), StoreError> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))").bind(name).execute(&mut **tx).await.map_err(backend)?;
+    Ok(())
+}
+
+/// Whether `sql` (one `$1` parameter) finds a row.
+async fn exists(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>, sql: &'static str, key: &str) -> Result<bool, StoreError> {
+    Ok(sqlx::query(sql).bind(key).fetch_optional(&mut **tx).await.map_err(backend)?.is_some())
+}
+
 fn all<T>(rows: Vec<PgRow>, f: fn(&PgRow) -> Result<T, StoreError>) -> Result<Vec<T>, StoreError> {
     rows.iter().map(f).collect()
 }
@@ -472,15 +512,20 @@ impl Store for PgStore {
     }
 
     async fn create_project(&self, p: &ProjectRec) -> Result<(), StoreError> {
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        lock_name(&mut tx, &format!("slug:{}", p.slug)).await?;
+        if exists(&mut tx, "SELECT 1 AS one FROM sandboxes WHERE slug = $1", &p.slug).await? {
+            return Err(StoreError::Conflict(format!("sandbox {}", p.slug)));
+        }
         sqlx::query("INSERT INTO projects (slug, org, created_at, deleted_at) VALUES ($1, $2, $3, $4)")
             .bind(&p.slug)
             .bind(&p.org)
             .bind(i64_of(p.created_at))
             .bind(p.deleted_at.map(i64_of))
-            .execute(&self.pool)
+            .execute(&mut *tx)
             .await
             .map_err(write_err(format!("project {}", p.slug)))?;
-        Ok(())
+        tx.commit().await.map_err(backend)
     }
 
     async fn project(&self, slug: &str) -> Result<Option<ProjectRec>, StoreError> {
@@ -627,6 +672,124 @@ impl Store for PgStore {
             .await
             .map_err(backend)?;
         row.as_ref().map(release_meta_of).transpose()
+    }
+
+    async fn create_sandbox(&self, s: &SandboxRec, max_per_org: usize) -> Result<(), StoreError> {
+        let settings = serde_json::to_string(&s.settings).map_err(backend)?;
+        let mut tx = self.pool.begin().await.map_err(backend)?;
+        lock_name(&mut tx, &format!("slug:{}", s.slug)).await?;
+        lock_name(&mut tx, &format!("sandboxes-of:{}", s.org)).await?;
+        if exists(&mut tx, "SELECT 1 AS one FROM projects WHERE slug = $1", &s.slug).await? {
+            return Err(StoreError::Conflict(format!("project {}", s.slug)));
+        }
+        let count: i64 = sqlx::query("SELECT COUNT(*) AS n FROM sandboxes WHERE org = $1")
+            .bind(&s.org)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(backend)?
+            .try_get("n")
+            .map_err(backend)?;
+        if u64_of(count) >= u64::try_from(max_per_org).unwrap_or(u64::MAX) {
+            return Err(StoreError::Limit(limit_message(&s.org, max_per_org)));
+        }
+        sqlx::query(
+            "INSERT INTO sandboxes (slug, org, created_by, created_at, image, settings, state, error, stops_at, cpus, mem_mib, disk_mib) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+        )
+        .bind(&s.slug)
+        .bind(&s.org)
+        .bind(&s.created_by)
+        .bind(i64_of(s.created_at))
+        .bind(&s.image)
+        .bind(settings)
+        .bind(sandbox_state_str(s.state))
+        .bind(&s.error)
+        .bind(s.stops_at.map(i64_of))
+        .bind(i64::from(s.cpus))
+        .bind(i64::from(s.mem_mib))
+        .bind(i64::from(s.disk_mib))
+        .execute(&mut *tx)
+        .await
+        .map_err(write_err(format!("sandbox {}", s.slug)))?;
+        tx.commit().await.map_err(backend)
+    }
+
+    async fn sandbox(&self, slug: &str) -> Result<Option<SandboxRec>, StoreError> {
+        let row = sqlx::query("SELECT * FROM sandboxes WHERE slug = $1").bind(slug).fetch_optional(&self.pool).await.map_err(backend)?;
+        row.as_ref().map(sandbox_of).transpose()
+    }
+
+    async fn org_sandboxes(&self, org: &str) -> Result<Vec<SandboxRec>, StoreError> {
+        let rows =
+            sqlx::query("SELECT * FROM sandboxes WHERE org = $1 ORDER BY slug").bind(org).fetch_all(&self.pool).await.map_err(backend)?;
+        all(rows, sandbox_of)
+    }
+
+    async fn sandboxes(&self) -> Result<Vec<SandboxRec>, StoreError> {
+        let rows = sqlx::query("SELECT * FROM sandboxes ORDER BY slug").fetch_all(&self.pool).await.map_err(backend)?;
+        all(rows, sandbox_of)
+    }
+
+    async fn update_sandbox(&self, s: &SandboxRec) -> Result<(), StoreError> {
+        sqlx::query(
+            "UPDATE sandboxes SET image = $2, settings = $3, state = $4, error = $5, stops_at = $6, cpus = $7, mem_mib = $8, \
+             disk_mib = $9 WHERE slug = $1",
+        )
+        .bind(&s.slug)
+        .bind(&s.image)
+        .bind(serde_json::to_string(&s.settings).map_err(backend)?)
+        .bind(sandbox_state_str(s.state))
+        .bind(&s.error)
+        .bind(s.stops_at.map(i64_of))
+        .bind(i64::from(s.cpus))
+        .bind(i64::from(s.mem_mib))
+        .bind(i64::from(s.disk_mib))
+        .execute(&self.pool)
+        .await
+        .map_err(backend)?;
+        Ok(())
+    }
+
+    async fn delete_sandbox(&self, slug: &str) -> Result<(), StoreError> {
+        // The environment goes with it (ON DELETE CASCADE).
+        sqlx::query("DELETE FROM sandboxes WHERE slug = $1").bind(slug).execute(&self.pool).await.map_err(backend)?;
+        Ok(())
+    }
+
+    async fn put_sandbox_env(&self, v: &EnvVarRec) -> Result<(), StoreError> {
+        sqlx::query(
+            "INSERT INTO sandbox_env (sandbox, name, ciphertext, fingerprint, updated_at) VALUES ($1, $2, $3, $4, $5) \
+             ON CONFLICT (sandbox, name) DO UPDATE SET ciphertext = EXCLUDED.ciphertext, fingerprint = EXCLUDED.fingerprint, \
+             updated_at = EXCLUDED.updated_at",
+        )
+        .bind(&v.sandbox)
+        .bind(&v.name)
+        .bind(&v.ciphertext)
+        .bind(&v.fingerprint)
+        .bind(i64_of(v.updated_at))
+        .execute(&self.pool)
+        .await
+        .map_err(backend)?;
+        Ok(())
+    }
+
+    async fn sandbox_env(&self, sandbox: &str) -> Result<Vec<EnvVarRec>, StoreError> {
+        let rows = sqlx::query("SELECT * FROM sandbox_env WHERE sandbox = $1 ORDER BY name")
+            .bind(sandbox)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(backend)?;
+        all(rows, env_var_of)
+    }
+
+    async fn delete_sandbox_env(&self, sandbox: &str, name: &str) -> Result<bool, StoreError> {
+        let done = sqlx::query("DELETE FROM sandbox_env WHERE sandbox = $1 AND name = $2")
+            .bind(sandbox)
+            .bind(name)
+            .execute(&self.pool)
+            .await
+            .map_err(backend)?;
+        Ok(done.rows_affected() == 1)
     }
 
     async fn kv_get(&self, key: &str) -> Result<Option<String>, StoreError> {

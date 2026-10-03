@@ -1,6 +1,7 @@
 //! The Firecracker backend (Linux/KVM hosts). Per replica: an ext4 rootfs built from the image
 //! digest, an optional persistent volume disk, a config drive, a routed tap, a cgroup with
-//! ceilings, and one `firecracker --no-api --config-file` process.
+//! ceilings, and one `firecracker --no-api --config-file` process. The guest's control and exec
+//! servers are reached through Firecracker's vsock socket.
 
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -18,10 +19,13 @@ use tokio::process::Child;
 
 use crate::cgroup::{Cgroups, Limits};
 use crate::exec::run;
-use crate::guest::{CONFIG_DEVICE, CONFIG_DRIVE_ENV, CONTROL_PORT, GUEST_INIT_PATH};
+use crate::guest::{CONFIG_DEVICE, CONFIG_DRIVE_ENV, CONTROL_PORT, EXEC_PORT, GUEST_INIT_PATH};
 use crate::image::{ImageStore, ImageStoreConfig};
 use crate::net::{FirewallPlan, GATEWAY_DEVICE, Ipv4Cidr, Lease, nft_ruleset};
-use crate::vmm::{GuestConn, ReplicaSpec, Started, Vmm, VmmError};
+use crate::vmm::{DiskId, GuestConn, ReplicaSpec, Started, Vmm, VmmError};
+
+/// Under `volumes/`, the directory of sandbox disks; it has a `.`, so no project slug names it.
+pub const SANDBOX_VOLUMES: &str = "aho.sandboxes";
 
 /// Guest CID of every VM; each VM has its own vsock device, so CIDs need not be unique.
 pub const GUEST_CID: u32 = 3;
@@ -38,6 +42,7 @@ pub struct FirecrackerConfig {
     pub kernel: PathBuf,
     pub images: ImageStoreConfig,
     pub cgroup_root: PathBuf,
+    /// Defaults; a replica may carry its own.
     pub vcpus: u8,
     pub mem_mib: u32,
     pub rootfs_mib: u32,
@@ -132,10 +137,7 @@ pub fn vm_config(kernel: &Path, vcpus: u8, mem_mib: u32, spec: &ReplicaSpec, pat
         drives.push(Drive { drive_id: "volume".into(), path_on_host: volume.clone(), is_root_device: false, is_read_only: false });
     }
     VmConfig {
-        boot_source: BootSource {
-            kernel_image_path: kernel.to_owned(),
-            boot_args: boot_args(&spec.lease, &format!("{}-{}", spec.process, spec.index)),
-        },
+        boot_source: BootSource { kernel_image_path: kernel.to_owned(), boot_args: boot_args(&spec.lease, &spec.hostname) },
         drives,
         machine_config: MachineConfig { vcpu_count: vcpus, mem_size_mib: mem_mib, smt: false },
         network_interfaces: vec![NetworkInterface {
@@ -180,23 +182,40 @@ impl Firecracker {
     /// Paths for replica `spec`.
     pub fn paths(&self, spec: &ReplicaSpec) -> VmPaths {
         let dir = self.cfg.state_dir.join("replicas").join(&spec.id);
-        let volume = spec.volume.as_ref().map(|_| {
-            self.cfg
-                .state_dir
-                .join("volumes")
-                .join(&spec.project)
-                .join(spec.stage.as_str())
-                .join(format!("{}-{}.ext4", spec.process, spec.index))
-        });
         VmPaths {
             rootfs: dir.join("rootfs.ext4"),
             config_drive: dir.join("config.drive"),
-            volume,
+            volume: spec.volume.as_ref().map(|v| self.volume_path(&v.disk)),
             vsock: dir.join("vsock.sock"),
             config_file: dir.join("firecracker.json"),
             console: dir.join("console.log"),
             dir,
         }
+    }
+
+    /// Where `disk` lives: `volumes/<project>/<stage>/<process>-<index>.ext4`, or
+    /// `volumes/`[`SANDBOX_VOLUMES`]`/<slug>.ext4`.
+    pub fn volume_path(&self, disk: &DiskId) -> PathBuf {
+        let volumes = self.cfg.state_dir.join("volumes");
+        match disk {
+            DiskId::Process { project, stage, process, index } => {
+                volumes.join(project).join(stage.as_str()).join(format!("{process}-{index}.ext4"))
+            }
+            DiskId::Sandbox(slug) => volumes.join(SANDBOX_VOLUMES).join(format!("{slug}.ext4")),
+        }
+    }
+
+    fn vcpus(&self, spec: &ReplicaSpec) -> u8 {
+        spec.cpus.unwrap_or(self.cfg.vcpus)
+    }
+
+    fn mem_mib(&self, spec: &ReplicaSpec) -> u32 {
+        spec.mem_mib.unwrap_or(self.cfg.mem_mib)
+    }
+
+    async fn vsock_stream(&self, id: &str) -> Result<UnixStream, VmmError> {
+        let path = self.vms.lock().get(id).map(|vm| vm.vsock.clone()).ok_or_else(|| VmmError::NotFound(id.into()))?;
+        UnixStream::connect(&path).await.map_err(io_err(&path))
     }
 
     /// One-time host setup: state directories, the cgroup root, the gateway address on a
@@ -265,7 +284,7 @@ impl Firecracker {
 
     /// Builds the disks and boots; on error the caller tears down.
     async fn boot(&self, spec: &ReplicaSpec, paths: &VmPaths) -> Result<Child, VmmError> {
-        let image = self.images.prepare(&spec.project, &spec.image_digest).await?;
+        let image = self.images.prepare(&spec.repo, &spec.image_digest).await?;
         self.images.rootfs_disk(&image, &paths.rootfs, self.cfg.rootfs_mib).await?;
         if let (Some(volume), Some(path)) = (&spec.volume, &paths.volume)
             && tokio::fs::metadata(path).await.is_err()
@@ -279,12 +298,12 @@ impl Firecracker {
         guest.image = image.config.clone();
         tokio::fs::write(&paths.config_drive, guest.to_drive()?).await.map_err(io_err(&paths.config_drive))?;
 
-        let config = vm_config(&self.cfg.kernel, self.cfg.vcpus, self.cfg.mem_mib, spec, paths);
+        let config = vm_config(&self.cfg.kernel, self.vcpus(spec), self.mem_mib(spec), spec, paths);
         let json = serde_json::to_vec_pretty(&config).map_err(|e| VmmError::Io("firecracker.json".into(), e.into()))?;
         tokio::fs::write(&paths.config_file, json).await.map_err(io_err(&paths.config_file))?;
 
         self.setup_tap(&spec.lease).await?;
-        let limits = Limits::for_vm(self.cfg.vcpus, self.cfg.mem_mib, self.cfg.memory_overhead_mib, self.cfg.pids_max);
+        let limits = Limits::for_vm(self.vcpus(spec), self.mem_mib(spec), self.cfg.memory_overhead_mib, self.cfg.pids_max);
         let cgroup = self.cgroups.create(&spec.id, &limits)?;
 
         let console = std::fs::File::create(&paths.console).map_err(io_err(&paths.console))?;
@@ -339,7 +358,7 @@ impl Vmm for Firecracker {
                 let _ = self.stop(&spec.id).await;
                 return Err(e);
             }
-            tracing::info!(id = %spec.id, project = %spec.project, process = %spec.process, ?pid, ip = %spec.lease.ip, "replica booted");
+            tracing::info!(id = %spec.id, repo = %spec.repo, hostname = %spec.hostname, ?pid, ip = %spec.lease.ip, "replica booted");
             Ok(Started { pid })
         })
     }
@@ -365,10 +384,28 @@ impl Vmm for Firecracker {
     }
 
     fn connect<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<GuestConn, VmmError>> {
+        Box::pin(async move { vsock_handshake(self.vsock_stream(id).await?, CONTROL_PORT).await })
+    }
+
+    fn exec<'a>(&'a self, id: &'a str) -> BoxFuture<'a, Result<GuestConn, VmmError>> {
+        Box::pin(async move { vsock_handshake(self.vsock_stream(id).await?, EXEC_PORT).await })
+    }
+
+    fn destroy_volume<'a>(&'a self, disk: &'a DiskId) -> BoxFuture<'a, Result<(), VmmError>> {
         Box::pin(async move {
-            let path = self.vms.lock().get(id).map(|vm| vm.vsock.clone()).ok_or_else(|| VmmError::NotFound(id.into()))?;
-            let stream = UnixStream::connect(&path).await.map_err(io_err(&path))?;
-            vsock_handshake(stream, CONTROL_PORT).await
+            let names = match disk {
+                DiskId::Process { project, process, .. } => vec![project.as_str(), process.as_str()],
+                DiskId::Sandbox(slug) => vec![slug.as_str()],
+            };
+            if !names.iter().all(|n| valid_id(n)) {
+                return Err(VmmError::NotFound(format!("{disk:?}")));
+            }
+            let path = self.volume_path(disk);
+            match tokio::fs::remove_file(&path).await {
+                Ok(()) => Ok(()),
+                Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+                Err(e) => Err(io_err(&path)(e)),
+            }
         })
     }
 }
@@ -391,7 +428,6 @@ mod tests {
     use std::collections::BTreeMap;
 
     use cloud_contract::ledger::Stage;
-    use cloud_contract::manifest::Health;
 
     use super::*;
     use crate::guest::GuestConfig;
@@ -404,12 +440,10 @@ mod tests {
         let lease = alloc.allocate().unwrap();
         let spec = ReplicaSpec {
             id: "vm-0a1b2c".into(),
-            project: "shop".into(),
-            stage: Stage::Live,
-            process: "web".into(),
-            index: 0,
-            release: "r1".into(),
+            repo: "shop".into(),
             image_digest: format!("sha256:{}", "a".repeat(64)),
+            hostname: "web-0".into(),
+            labels: vec![],
             lease,
             guest: GuestConfig {
                 process: "web".into(),
@@ -417,11 +451,15 @@ mod tests {
                 image: Default::default(),
                 env: BTreeMap::new(),
                 port: Some(8080),
-                health: Health::Http { path: "/".into(), port: None },
                 volume: None,
                 dns: vec![],
             },
-            volume: Some(VolumeSpec { size_mb: 1024 }),
+            volume: Some(VolumeSpec {
+                disk: DiskId::Process { project: "shop".into(), stage: Stage::Live, process: "web".into(), index: 0 },
+                size_mb: 1024,
+            }),
+            cpus: None,
+            mem_mib: None,
         };
         let dir = PathBuf::from("/var/lib/aho/replicas/vm-0a1b2c");
         let paths = VmPaths {

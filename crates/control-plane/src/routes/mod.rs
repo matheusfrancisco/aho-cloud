@@ -7,13 +7,14 @@ mod internal;
 mod orgs;
 mod projects;
 mod releases;
+mod sandboxes;
 mod secrets;
 mod workspace;
 
 use axum::Router;
 use axum::extract::rejection::JsonRejection;
 use axum::extract::{DefaultBodyLimit, FromRequest, Request};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post, put};
 use cloud_api::internal::routes as ir;
 use cloud_api::routes as r;
 use serde::de::DeserializeOwned;
@@ -78,6 +79,17 @@ pub fn router(state: AppState) -> Router {
         .route(r::WORKSPACE_FILES, get(workspace::files))
         .route(r::WORKSPACE_FILE, get(workspace::file))
         .route(r::WORKSPACE_DEPLOY, post(workspace::deploy))
+        .route(r::ORG_SANDBOXES, get(sandboxes::list).post(sandboxes::create))
+        .route(r::SANDBOX, get(sandboxes::get).delete(sandboxes::delete))
+        .route(r::SANDBOX_START, post(sandboxes::start))
+        .route(r::SANDBOX_STOP, post(sandboxes::stop))
+        .route(r::SANDBOX_SETTINGS, put(sandboxes::settings))
+        .route(r::SANDBOX_TERMINAL, post(sandboxes::terminal))
+        .route(r::SANDBOX_CHAT, post(sandboxes::chat))
+        .route(r::SANDBOX_FILES, get(sandboxes::files))
+        .route(r::SANDBOX_FILE, get(sandboxes::file))
+        .route(r::SANDBOX_ENV, get(sandboxes::env).put(sandboxes::set_env))
+        .route(r::SANDBOX_ENV_VAR, delete(sandboxes::delete_env))
         .route(r::LEDGER, get(projects::ledger))
         .route(r::SECRETS, get(secrets::list).put(secrets::set).post(secrets::set))
         .route(ir::SITES, get(internal::sites))

@@ -4,12 +4,11 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use cloud_api::ApiError;
 use cloud_api::internal::{
-    BuildJob, BuildResult, Deployment, DeploymentStatus, Maintenance, Scale, StartWorkspace, WorkspaceFileRef, WorkspacePackage,
-    WorkspaceRef, WorkspaceStarted, routes,
+    BuildJob, BuildResult, Deployment, DeploymentStatus, Maintenance, SandboxChatStart, SandboxSpec, SandboxStatus, SandboxTerminal, Scale,
+    StartWorkspace, WorkspaceFileRef, WorkspacePackage, WorkspaceRef, WorkspaceStarted, routes,
 };
-use cloud_api::{FileContent, FileTree};
+use cloud_api::{ApiError, FileContent, FileTree, SandboxChat, TerminalAccess};
 use cloud_contract::ledger::Stage;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -55,7 +54,7 @@ pub trait BuildService: Send + Sync {
     async fn build(&self, job: BuildJob) -> Result<BuildResult, PortError>;
 }
 
-/// The runtime agents: desired state per `(project, stage)`.
+/// The runtime agents: desired state per `(project, stage)`, and sandboxes by slug.
 #[async_trait]
 pub trait RuntimeService: Send + Sync {
     async fn deploy(&self, deployment: Deployment) -> Result<DeploymentStatus, PortError>;
@@ -65,9 +64,22 @@ pub trait RuntimeService: Send + Sync {
     async fn scale(&self, project: &str, stage: Stage, scale: Scale) -> Result<(), PortError>;
     async fn maintenance(&self, project: &str, stage: Stage, maintenance: Maintenance) -> Result<(), PortError>;
     async fn sleep(&self, project: &str, stage: Stage) -> Result<(), PortError>;
+
+    /// Want the sandbox running with `spec` (a changed spec replaces the VM; the disk is kept).
+    async fn put_sandbox(&self, spec: SandboxSpec) -> Result<SandboxStatus, PortError>;
+    /// `None` when the runtime has no such sandbox (no VM: it is stopped).
+    async fn sandbox_status(&self, slug: &str) -> Result<Option<SandboxStatus>, PortError>;
+    /// Stops the VM, keeps the disk; `None` when the runtime has no such sandbox.
+    async fn stop_sandbox(&self, slug: &str) -> Result<Option<SandboxStatus>, PortError>;
+    /// Stops the VM and destroys its disk (also when the runtime no longer knows the sandbox).
+    async fn delete_sandbox(&self, slug: &str) -> Result<(), PortError>;
+    /// The file tree of the running sandbox's workspace.
+    async fn sandbox_files(&self, slug: &str) -> Result<FileTree, PortError>;
+    /// One file of the running sandbox's workspace (`path` relative to it).
+    async fn sandbox_file(&self, slug: &str, path: &str) -> Result<FileContent, PortError>;
 }
 
-/// Entry A: aho workspaces, one per `(project, user)`.
+/// Entry A: aho workspaces, one per `(project, user)`; terminals and chats in sandboxes.
 #[async_trait]
 pub trait SessionHostService: Send + Sync {
     async fn start(&self, request: StartWorkspace) -> Result<WorkspaceStarted, PortError>;
@@ -77,6 +89,10 @@ pub trait SessionHostService: Send + Sync {
     async fn files(&self, workspace: WorkspaceRef) -> Result<FileTree, PortError>;
     /// One file of the workspace.
     async fn file(&self, file: WorkspaceFileRef) -> Result<FileContent, PortError>;
+    /// A single-use terminal socket bound to exactly this request.
+    async fn sandbox_terminal(&self, request: SandboxTerminal) -> Result<TerminalAccess, PortError>;
+    /// aho rpc to the aho inside a sandbox.
+    async fn sandbox_chat(&self, request: SandboxChatStart) -> Result<SandboxChat, PortError>;
 }
 
 /// An authenticated JSON client for one internal service.
@@ -103,9 +119,13 @@ impl ServiceClient {
         &self,
         method: reqwest::Method,
         path: &str,
+        query: &[(&str, &str)],
         body: Option<&B>,
     ) -> Result<Option<reqwest::Response>, PortError> {
         let mut req = self.http.request(method, format!("{}{path}", self.base)).bearer_auth(&self.token);
+        if !query.is_empty() {
+            req = req.query(query);
+        }
         if let Some(body) = body {
             let bytes = serde_json::to_vec(body).map_err(|e| PortError::Decode { service: self.service, message: e.to_string() })?;
             req = req.header(reqwest::header::CONTENT_TYPE, "application/json").body(bytes);
@@ -139,31 +159,61 @@ impl ServiceClient {
         path: &str,
         body: Option<&B>,
     ) -> Result<T, PortError> {
-        match self.send(method, path, body).await? {
+        self.call_query(method, path, &[], body).await
+    }
+
+    /// Like [`ServiceClient::call`], with query parameters (encoded here).
+    pub async fn call_query<B: Serialize, T: DeserializeOwned>(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        query: &[(&str, &str)],
+        body: Option<&B>,
+    ) -> Result<T, PortError> {
+        match self.send(method, path, query, body).await? {
             Some(resp) => self.json(resp).await,
             None => Err(self.not_found(path)),
         }
     }
 
     /// Like [`ServiceClient::call`], with 404 as `None`.
-    pub async fn call_optional<T: DeserializeOwned>(&self, path: &str) -> Result<Option<T>, PortError> {
-        match self.send::<()>(reqwest::Method::GET, path, None).await? {
+    pub async fn call_or_none<B: Serialize, T: DeserializeOwned>(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<&B>,
+    ) -> Result<Option<T>, PortError> {
+        match self.send(method, path, &[], body).await? {
             Some(resp) => self.json(resp).await.map(Some),
             None => Ok(None),
         }
     }
 
+    /// `GET` with 404 as `None`.
+    pub async fn call_optional<T: DeserializeOwned>(&self, path: &str) -> Result<Option<T>, PortError> {
+        self.call_or_none::<(), T>(reqwest::Method::GET, path, None).await
+    }
+
     /// Request whose 2xx body is ignored.
     pub async fn call_empty<B: Serialize>(&self, path: &str, body: Option<&B>) -> Result<(), PortError> {
-        match self.send(reqwest::Method::POST, path, body).await? {
+        match self.send(reqwest::Method::POST, path, &[], body).await? {
             Some(_) => Ok(()),
             None => Err(self.not_found(path)),
         }
+    }
+
+    /// `DELETE`; `false` when the service answered 404.
+    pub async fn delete(&self, path: &str) -> Result<bool, PortError> {
+        Ok(self.send::<()>(reqwest::Method::DELETE, path, &[], None).await?.is_some())
     }
 }
 
 fn deployment_path(template: &str, project: &str, stage: Stage) -> String {
     cloud_api::routes::fill(template, &[("p", project), ("stage", stage.as_str())])
+}
+
+fn sandbox_path(template: &str, slug: &str) -> String {
+    cloud_api::routes::fill(template, &[("s", slug)])
 }
 
 /// The builder over HTTP.
@@ -176,7 +226,7 @@ impl BuildService for HttpBuilder {
     }
 }
 
-/// A runtime agent over HTTP.
+/// A runtime agent over HTTP. Sandbox answers in 4xx are [`PortError::classify`]d.
 pub struct HttpRuntime(pub ServiceClient);
 
 #[async_trait]
@@ -204,6 +254,37 @@ impl RuntimeService for HttpRuntime {
 
     async fn sleep(&self, project: &str, stage: Stage) -> Result<(), PortError> {
         self.0.call_empty::<()>(&deployment_path(routes::DEPLOYMENT_SLEEP, project, stage), None).await
+    }
+
+    async fn put_sandbox(&self, spec: SandboxSpec) -> Result<SandboxStatus, PortError> {
+        let path = sandbox_path(routes::SANDBOX, &spec.slug);
+        self.0.call(reqwest::Method::PUT, &path, Some(&spec)).await.map_err(PortError::classify)
+    }
+
+    async fn sandbox_status(&self, slug: &str) -> Result<Option<SandboxStatus>, PortError> {
+        self.0.call_optional(&sandbox_path(routes::SANDBOX, slug)).await.map_err(PortError::classify)
+    }
+
+    async fn stop_sandbox(&self, slug: &str) -> Result<Option<SandboxStatus>, PortError> {
+        self.0
+            .call_or_none::<(), _>(reqwest::Method::POST, &sandbox_path(routes::SANDBOX_STOP, slug), None)
+            .await
+            .map_err(PortError::classify)
+    }
+
+    async fn delete_sandbox(&self, slug: &str) -> Result<(), PortError> {
+        self.0.delete(&sandbox_path(routes::SANDBOX, slug)).await.map(drop).map_err(PortError::classify)
+    }
+
+    async fn sandbox_files(&self, slug: &str) -> Result<FileTree, PortError> {
+        self.0.call::<(), _>(reqwest::Method::GET, &sandbox_path(routes::SANDBOX_FILES, slug), None).await.map_err(PortError::classify)
+    }
+
+    async fn sandbox_file(&self, slug: &str, path: &str) -> Result<FileContent, PortError> {
+        self.0
+            .call_query::<(), _>(reqwest::Method::GET, &sandbox_path(routes::SANDBOX_FILE, slug), &[("path", path)], None)
+            .await
+            .map_err(PortError::classify)
     }
 }
 
@@ -233,5 +314,13 @@ impl SessionHostService for HttpSessionHost {
 
     async fn file(&self, file: WorkspaceFileRef) -> Result<FileContent, PortError> {
         self.workspace_call(routes::WORKSPACE_FILE, &file).await
+    }
+
+    async fn sandbox_terminal(&self, request: SandboxTerminal) -> Result<TerminalAccess, PortError> {
+        self.workspace_call(routes::SANDBOX_TERMINALS, &request).await
+    }
+
+    async fn sandbox_chat(&self, request: SandboxChatStart) -> Result<SandboxChat, PortError> {
+        self.workspace_call(routes::SANDBOX_CHATS, &request).await
     }
 }

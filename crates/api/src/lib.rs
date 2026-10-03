@@ -9,6 +9,7 @@
 
 #[cfg(feature = "client")]
 pub mod client;
+pub mod exec;
 pub mod internal;
 pub mod ts;
 
@@ -59,6 +60,32 @@ pub mod routes {
     pub const WORKSPACE_FILES: &str = "/v1/projects/{p}/workspace/files";
     /// `GET ?path=` → [`super::FileContent`].
     pub const WORKSPACE_FILE: &str = "/v1/projects/{p}/workspace/file";
+    /// `GET` → `Vec<`[`super::Sandbox`]`>`; `POST` a [`super::CreateSandbox`] → [`super::Sandbox`].
+    /// `{s}` = sandbox slug; slugs are unique across projects and sandboxes.
+    pub const ORG_SANDBOXES: &str = "/v1/orgs/{org}/sandboxes";
+    /// `GET` → [`super::Sandbox`]; `DELETE` → 204 (the VM and its disk are destroyed).
+    pub const SANDBOX: &str = "/v1/sandboxes/{s}";
+    /// `POST` → [`super::Sandbox`]: boot it (again) with its disk and env.
+    pub const SANDBOX_START: &str = "/v1/sandboxes/{s}/start";
+    /// `POST` → [`super::Sandbox`]: stop the VM, keep the disk.
+    pub const SANDBOX_STOP: &str = "/v1/sandboxes/{s}/stop";
+    /// `POST` a [`super::TerminalRequest`] → [`super::TerminalAccess`] (a WebSocket speaking
+    /// [`crate::exec`] frames as binary messages).
+    pub const SANDBOX_TERMINAL: &str = "/v1/sandboxes/{s}/terminal";
+    /// `POST` a [`super::StartSandboxChat`] → [`super::SandboxChat`]: aho rpc to the aho inside.
+    pub const SANDBOX_CHAT: &str = "/v1/sandboxes/{s}/chat";
+    /// `GET` → [`super::FileTree`] of `/workspace` inside the sandbox.
+    pub const SANDBOX_FILES: &str = "/v1/sandboxes/{s}/files";
+    /// `GET ?path=` → [`super::FileContent`].
+    pub const SANDBOX_FILE: &str = "/v1/sandboxes/{s}/file";
+    /// `PUT` a [`super::SandboxSettings`] → [`super::Sandbox`]. A running sandbox is restarted
+    /// with them (its disk is kept).
+    pub const SANDBOX_SETTINGS: &str = "/v1/sandboxes/{s}/settings";
+    /// `GET` → `Vec<`[`super::EnvVarView`]`>`; `PUT` a [`super::SetEnvVar`] → [`super::EnvVarView`].
+    /// Values reach the VM at its next start.
+    pub const SANDBOX_ENV: &str = "/v1/sandboxes/{s}/env";
+    /// `DELETE` → 204.
+    pub const SANDBOX_ENV_VAR: &str = "/v1/sandboxes/{s}/env/{name}";
 
     /// Fills `{name}` placeholders in order of `args`.
     pub fn fill(template: &str, args: &[(&str, &str)]) -> String {
@@ -76,7 +103,8 @@ pub mod routes {
 #[error("{code}: {message}")]
 pub struct ApiError {
     /// Stable, snake_case: `unauthorized`, `forbidden`, `not_found`, `conflict`, `invalid`,
-    /// `refused`, `quorum_not_met`, `tainted`, `rate_limited`, `internal`.
+    /// `refused`, `quorum_not_met`, `tainted`, `rate_limited`, `internal`, `sandboxes_disabled`
+    /// (503: this deployment runs no sandboxes).
     pub code: String,
     pub message: String,
     /// Manifest refusals, when `code = "refused"`.
@@ -523,6 +551,133 @@ pub struct FileContent {
     pub text: Option<String>,
     /// Only the first part of a large file is in `text`.
     pub truncated: bool,
+}
+
+// ---- sandboxes ------------------------------------------------------------------------------
+
+/// Hosts a new sandbox may reach unless the request names its own list: model providers, package
+/// registries and git hosting.
+pub const DEFAULT_SANDBOX_EGRESS: &[&str] = &[
+    "api.anthropic.com",
+    "api.openai.com",
+    "registry.npmjs.org",
+    "pypi.org",
+    "files.pythonhosted.org",
+    "crates.io",
+    "index.crates.io",
+    "static.crates.io",
+    "github.com",
+    "*.github.com",
+    "*.githubusercontent.com",
+];
+
+/// Default and ceiling of [`SandboxSettings::auto_stop_hours`].
+pub const SANDBOX_AUTO_STOP_DEFAULT_HOURS: u16 = 8;
+pub const SANDBOX_AUTO_STOP_MAX_HOURS: u16 = 72;
+
+/// A VM with aho installed, for coding without deploying. Booted at once.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct CreateSandbox {
+    pub slug: String,
+    /// Defaults: [`DEFAULT_SANDBOX_EGRESS`], no public port, [`SANDBOX_AUTO_STOP_DEFAULT_HOURS`].
+    #[serde(default)]
+    pub settings: Option<SandboxSettings>,
+}
+
+/// What the owner may change on a sandbox.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SandboxSettings {
+    /// Hosts the VM may reach (`*.example.com` wildcards); everything else is refused.
+    pub egress: Vec<String>,
+    /// Served at [`Sandbox::url`] behind the edge's email sign-in, open to org members only.
+    #[serde(default)]
+    pub port: Option<u16>,
+    /// The VM stops this long after each start (the disk is kept); 1 ..=
+    /// [`SANDBOX_AUTO_STOP_MAX_HOURS`].
+    pub auto_stop_hours: u16,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+pub enum SandboxState {
+    Starting,
+    Running,
+    Stopped,
+    Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct Sandbox {
+    pub slug: String,
+    pub org: String,
+    pub state: SandboxState,
+    pub created_by: User,
+    /// Unix seconds.
+    pub created_at: u64,
+    /// `<repo>@sha256:…` the VM boots from.
+    pub image: String,
+    pub settings: SandboxSettings,
+    /// `https://<slug>.<preview domain>` while `settings.port` is set.
+    #[serde(default)]
+    pub url: Option<String>,
+    /// Unix seconds the running VM is stopped at.
+    #[serde(default)]
+    pub stops_at: Option<u64>,
+    pub cpus: u8,
+    pub mem_mib: u32,
+    pub disk_mib: u32,
+    /// Why it is `failed`.
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct TerminalRequest {
+    pub cols: u16,
+    pub rows: u16,
+    /// Defaults to a login shell.
+    #[serde(default)]
+    pub command: Option<Vec<String>>,
+    /// Pipes instead of a terminal (stdout and stderr stay apart, no `\r\n`, no echo), like
+    /// `ssh -T`: for scripts and piped input. `cols`/`rows` are then ignored.
+    #[serde(default)]
+    pub no_pty: bool,
+}
+
+/// Open `url` (with `?token=`) as a WebSocket within a minute.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct TerminalAccess {
+    pub url: String,
+    pub token: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct StartSandboxChat {
+    #[serde(default)]
+    pub session_id: Option<String>,
+}
+
+/// Like [`Workspace`], for the aho running inside a sandbox (no preview).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SandboxChat {
+    pub rpc_url: String,
+    pub token: String,
+    #[serde(default)]
+    pub session_id: Option<String>,
+}
+
+/// An environment variable for the sandbox (e.g. `ANTHROPIC_API_KEY` for the aho inside). Stored
+/// encrypted, never returned.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct SetEnvVar {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct EnvVarView {
+    pub name: String,
+    pub fingerprint: String,
 }
 
 // ---- ledger ---------------------------------------------------------------------------------

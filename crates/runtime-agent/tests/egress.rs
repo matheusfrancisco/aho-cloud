@@ -7,7 +7,6 @@ use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-use cloud_contract::ledger::Stage;
 use cloud_runtime::egress::{Dialer, EgressPolicies, EgressProxy, GuestPolicy};
 use futures::future::BoxFuture;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -92,7 +91,7 @@ fn policies() -> EgressPolicies {
     let p = EgressPolicies::default();
     p.set(
         IpAddr::V4(Ipv4Addr::LOCALHOST),
-        GuestPolicy { project: "acme-shop".into(), stage: Stage::Live, allow: vec!["api.stripe.com".into(), "*.sentry.io".into()] },
+        GuestPolicy { owner: "acme-shop/live".into(), allow: vec!["api.stripe.com".into(), "*.sentry.io".into()] },
     );
     p
 }
@@ -165,8 +164,8 @@ async fn policy_follows_the_guest_address() {
     let (status, _) = connect(addr, "api.stripe.com:443").await;
     assert_eq!(status, "HTTP/1.1 403 Forbidden");
 
-    // A new replica at the same address gets exactly its own deployment's allowlist.
-    p.set(IpAddr::V4(Ipv4Addr::LOCALHOST), GuestPolicy { project: "other".into(), stage: Stage::Preview, allow: vec!["evil.com".into()] });
+    // A new guest at the same address (here a sandbox) gets exactly its own allowlist.
+    p.set(IpAddr::V4(Ipv4Addr::LOCALHOST), GuestPolicy { owner: "sandbox other".into(), allow: vec!["evil.com".into()] });
     assert_eq!(connect(addr, "evil.com:443").await.0, "HTTP/1.1 200 Connection Established");
     assert_eq!(connect(addr, "api.stripe.com:443").await.0, "HTTP/1.1 403 Forbidden");
 }
