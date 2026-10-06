@@ -1,0 +1,68 @@
+{
+  "action": "added",
+  "installation": {
+    "id": 52118812,
+    "client_id": "Iv23liAbCdEf",
+    "account": {
+      "login": "acme",
+      "id": 91234567,
+      "type": "Organization",
+      "site_admin": false
+    },
+    "repository_selection": "selected",
+    "access_tokens_url": "https://api.github.com/app/installations/52118812/access_tokens",
+    "app_id": 1012345,
+    "app_slug": "ahomage",
+    "target_id": 91234567,
+    "target_type": "Organization",
+    "permissions": {
+      "contents": "read",
+      "deployments": "read",
+      "metadata": "read",
+      "pull_requests": "read"
+    },
+    "events": [
+      "deployment_status",
+      "push",
+      "repository"
+    ],
+    "created_at": "2026-09-01T08:00:00.000Z",
+    "updated_at": "2026-09-01T08:00:01.000Z",
+    "single_file_name": null,
+    "suspended_by": null,
+    "suspended_at": null
+  },
+  "repository_selection": "selected",
+  "repositories_added": [
+    {
+      "id": 790001002,
+      "node_id": "R_kgDOLxAAAg",
+      "name": "web-app",
+      "full_name": "acme/web-app",
+      "private": true
+    },
+    {
+      "id": 790001003,
+      "node_id": "R_kgDOLxAAAw",
+      "name": "infra.tools",
+      "full_name": "acme/infra.tools",
+      "private": false
+    }
+  ],
+  "repositories_removed": [
+    {
+      "id": 781220335,
+      "node_id": "R_kgDOLpQ1Hw",
+      "name": "legacy",
+      "full_name": "acme/legacy",
+      "private": true
+    }
+  ],
+  "requester": null,
+  "sender": {
+    "login": "jdoe",
+    "id": 5550001,
+    "type": "User",
+    "site_admin": false
+  }
+}

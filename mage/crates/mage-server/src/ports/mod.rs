@@ -1,0 +1,22 @@
+//! Role-only driven port traits. Append `pub mod` lines, never remove others'.
+pub mod auth;
+pub mod vault;
+pub mod llm;
+pub mod chat;
+pub mod deployments;
+pub mod hooks;
+pub mod source_host_admin;
+pub mod tracker;
+pub mod indexer_link;
+pub mod runs;
+pub mod audit;
+pub mod feed;
+pub mod inbox;
+pub mod org;
+pub mod outbound;
+pub mod secrets;
+pub mod ticket;
+pub mod tokens;
+pub mod triage_eval;
+pub mod pull_requests;
+pub mod secretscan;

@@ -1,0 +1,7 @@
+[
+  "TypeError: Cannot read properties of undefined (reading 'email')",
+  "NotFoundError: member undefined does not exist in team team_42",
+  "member lookup failed",
+  "404 DELETE /api/v1/teams/team_42/members/undefined",
+  "Remove member"
+]

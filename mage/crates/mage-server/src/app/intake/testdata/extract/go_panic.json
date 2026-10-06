@@ -1,0 +1,6 @@
+[
+  "panic: runtime error: invalid memory address or nil pointer dereference",
+  "finalize invoice failed",
+  "billing-worker-7d9f8c6b5-x2x9k",
+  "We couldn't finalize your invoice"
+]

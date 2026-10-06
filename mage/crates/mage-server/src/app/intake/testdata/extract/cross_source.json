@@ -1,0 +1,7 @@
+[
+  "PaymentDeclinedError: card_declined (issuer: do_not_honor)",
+  "charge failed for cart c_901",
+  "402 POST /api/v1/checkout/charge",
+  "500 POST /api/v1/checkout/charge",
+  "Your card was declined by the issuer"
+]

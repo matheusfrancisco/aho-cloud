@@ -1,0 +1,5 @@
+[
+  "500 GET /api/v2/orders",
+  "429 POST /api/v2/orders/sync",
+  "503 Service Unavailable"
+]

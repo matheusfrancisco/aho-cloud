@@ -1,0 +1,9 @@
+[
+  "webhook delivery failed: x509: certificate signed by unknown authority",
+  "giving up on endpoint ep_77 after 5 attempts",
+  "upstream responded with an error",
+  "Connection reset by peer while posting to endpoint ep_77",
+  "Retry budget exhausted for tenant t_19",
+  "signature check failed: header X-Acme-Signature missing",
+  "502 POST /hooks/acme"
+]

@@ -1,0 +1,7 @@
+[
+  "called `Option::unwrap()` on a `None` value",
+  "thread 'main' panicked at 'index out of bounds: the len is 3 but the index is 7', src/parser.rs:88:17",
+  "tokio-runtime-worker",
+  "Option::unwrap()",
+  "index out of bounds: the len is 3 but the index is 7"
+]

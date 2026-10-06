@@ -1,0 +1,90 @@
+{
+  "action": "created",
+  "deployment_status": {
+    "url": "https://api.github.com/repos/acme/billing-api/deployments/1903442118/statuses/2771065001",
+    "id": 2771065001,
+    "node_id": "DES_kwDOLpQ1Hs6lKx",
+    "state": "in_progress",
+    "creator": {
+      "login": "github-actions[bot]",
+      "id": 41898282,
+      "type": "Bot"
+    },
+    "description": "",
+    "environment": "production",
+    "target_url": "https://github.com/acme/billing-api/actions/runs/11110000001",
+    "created_at": "2026-09-30T14:00:58Z",
+    "updated_at": "2026-09-30T14:00:58Z",
+    "deployment_url": "https://api.github.com/repos/acme/billing-api/deployments/1903442118",
+    "repository_url": "https://api.github.com/repos/acme/billing-api",
+    "environment_url": "https://billing.acme.test",
+    "log_url": "https://github.com/acme/billing-api/actions/runs/11110000001",
+    "performed_via_github_app": null
+  },
+  "deployment": {
+    "url": "https://api.github.com/repos/acme/billing-api/deployments/1903442118",
+    "id": 1903442118,
+    "node_id": "DE_kwDOLpQ1Hs5xc3hG",
+    "task": "deploy",
+    "original_environment": "production",
+    "environment": "production",
+    "description": null,
+    "created_at": "2026-09-30T14:00:41Z",
+    "updated_at": "2026-09-30T14:02:11Z",
+    "statuses_url": "https://api.github.com/repos/acme/billing-api/deployments/1903442118/statuses",
+    "repository_url": "https://api.github.com/repos/acme/billing-api",
+    "creator": {
+      "login": "github-actions[bot]",
+      "id": 41898282,
+      "type": "Bot"
+    },
+    "sha": "9f2c1a7e4b3d5c6f7a8b9c0d1e2f3a4b5c6d7e8f",
+    "ref": "main",
+    "payload": {},
+    "transient_environment": false,
+    "production_environment": true,
+    "performed_via_github_app": null
+  },
+  "repository": {
+    "id": 781220334,
+    "node_id": "R_kgDOLpQ1Hg",
+    "name": "billing-api",
+    "full_name": "acme/billing-api",
+    "private": true,
+    "owner": {
+      "name": "acme",
+      "email": null,
+      "login": "acme",
+      "id": 91234567,
+      "node_id": "O_kgDOBXAbcd",
+      "avatar_url": "https://avatars.githubusercontent.com/u/91234567?v=4",
+      "type": "Organization",
+      "site_admin": false
+    },
+    "html_url": "https://github.com/acme/billing-api",
+    "description": "Billing service",
+    "fork": false,
+    "url": "https://api.github.com/repos/acme/billing-api",
+    "created_at": "2024-04-02T09:11:00Z",
+    "updated_at": "2026-09-30T13:58:01Z",
+    "pushed_at": "2026-09-30T13:58:00Z",
+    "default_branch": "main",
+    "archived": false,
+    "visibility": "private"
+  },
+  "organization": {
+    "login": "acme",
+    "id": 91234567,
+    "url": "https://api.github.com/orgs/acme"
+  },
+  "installation": {
+    "id": 52118812,
+    "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uNTIxMTg4MTI="
+  },
+  "sender": {
+    "login": "jdoe",
+    "id": 5550001,
+    "type": "User",
+    "site_admin": false
+  }
+}

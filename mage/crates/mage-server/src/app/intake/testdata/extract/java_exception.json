@@ -1,0 +1,7 @@
+[
+  "java.lang.IllegalStateException: Invoice INV-2024-0042 is already finalized",
+  "org.postgresql.util.PSQLException: ERROR: duplicate key value violates unique constraint \"invoices_number_key\"",
+  "java.util.ConcurrentModificationException: null",
+  "Request processing failed for invoice INV-2024-0042",
+  "invoices_number_key"
+]

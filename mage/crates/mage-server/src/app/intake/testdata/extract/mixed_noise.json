@@ -1,0 +1,7 @@
+[
+  "Error: sync aborted: remote rejected batch 17 (schema mismatch on field \"created_at\")",
+  "slow sometimes",
+  "2024.03.01-rc2",
+  "Last sync failed: upstream returned an unexpected response",
+  "ERROR [sync.agent] batch 17 rejected by remote"
+]

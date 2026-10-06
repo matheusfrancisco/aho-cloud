@@ -1,0 +1,23 @@
+{
+  "zen": "Design for failure.",
+  "hook_id": 501234567,
+  "hook": {
+    "type": "App",
+    "id": 501234567,
+    "name": "web",
+    "active": true,
+    "events": [
+      "deployment_status",
+      "push",
+      "repository"
+    ],
+    "config": {
+      "content_type": "json",
+      "insecure_ssl": "0",
+      "url": "https://mage.acme.test/hooks/github"
+    },
+    "app_id": 1012345,
+    "created_at": "2026-09-01T08:00:00Z",
+    "updated_at": "2026-09-01T08:00:00Z"
+  }
+}
