@@ -1,0 +1,36 @@
+[package]
+name = "mage-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "mage"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+mage-core.workspace = true
+mage-infra.workspace = true
+mage-server.workspace = true
+mage-indexer.workspace = true
+mage-runner.workspace = true
+clap.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+time.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+toml.workspace = true
+uuid.workspace = true

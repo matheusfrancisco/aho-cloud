@@ -1,0 +1,177 @@
+# Mage config for local development (`mage start all`): one file, one section per role.
+# Every field may be overridden from the environment as MAGE_<SECTION>__<FIELD>=value
+# (e.g. MAGE_SERVER__BIND=127.0.0.1:9090). Fields named *_key, *_secret, *_token or *password
+# only take secret references: env:NAME, file:/path or gcpsm:projects/{p}/secrets/{s}/versions/{v}.
+#
+# `mage start server|indexer|runner` refuses a file that also holds another role's section: in
+# production each role gets its own file. `mage start all` (development only) loads all three.
+#
+# First run (from mage/, Postgres reachable, MAGE_DATABASE_URL and MAGE_GITHUB_APP_PRIVATE_KEY set):
+#   (cd web-app && npm ci && npm run build)        # optional: embedded UI; without it the API only
+#   cargo build -p mage-app && export PATH="$PWD/target/debug:$PATH"
+#   mkdir -p ~/.config/mage && head -c 32 /dev/urandom > ~/.config/mage/dev.key && chmod 600 ~/.config/mage/dev.key
+#   mage --config config/mage.example.toml migrate
+#   mage --config config/mage.example.toml admin secret put platform github/oauth_client_secret --stdin   # read app OAuth secret
+#   mage --config config/mage.example.toml admin org create hoop --name Hoop --owner <github-login>
+#   (umask 077 && mage --config config/mage.example.toml admin runner-token create dev-runner > ~/.config/mage/runner-bootstrap)
+#   mage --config config/mage.example.toml start all                                    # then open http://localhost:8080
+
+[server]
+environment = "development"            # "production" refuses the local vault key and harness login
+public_url  = "http://localhost:8080"  # browsers, OAuth callbacks, runners and harnesses use it
+bind        = "127.0.0.1:8080"
+
+[server.database]
+url_source = "env:MAGE_DATABASE_URL"   # e.g. postgres://postgres@localhost:5432/mage
+pool_max   = 10
+# platform_url_source = "env:MAGE_DATABASE_PLATFORM_URL"   # default: the same URL
+
+[server.blob]
+backend = "local"                      # "gcs" | "s3" need `bucket`
+root    = "~/.mage/blob"               # served back through signed /_dev/blob URLs
+# dev_signing_key = "file:~/.config/mage/blob.key"         # default: random per process
+
+[server.vault]
+backend        = "local-key-file"      # production: "gcp-kms" with platform_kek = "projects/…/cryptoKeys/…"
+local_key_file = "~/.config/mage/dev.key"   # 32 raw bytes, mode 0600
+
+# The read-only GitHub App (shared with the indexer). Its OAuth client secret lives in the
+# vault: `mage admin secret put platform github/oauth_client_secret --stdin`.
+[server.github]
+client_id       = "Iv1.0000000000000000"
+app_private_key = "env:MAGE_GITHUB_APP_PRIVATE_KEY"        # PEM; or file:~/.config/mage/github-read.pem
+# installations = [{ id = 12345678, org = "hoop" }]        # internal v1: bound at start, no install callback
+
+# [server.github.api]                  # GitHub Enterprise / test servers
+# api_base = "https://api.github.com/"
+# web_base = "https://github.com/"
+
+# The Mage Fix App (fix.md F3); omit until it exists. Its key is the vault secret
+# github_fix/app_private_key, its OAuth secret github_fix/oauth_client_secret.
+# [server.github_fix]
+# client_id = "Iv1.1111111111111111"
+
+[server.login.github]
+client_id = "Iv1.0000000000000000"     # the read app's OAuth client
+
+# [server.login.google]                # optional; secret: google/oauth_client_secret
+# client_id = "0000-xxxx.apps.googleusercontent.com"
+
+[server.integrations]
+github_app_slug = "ahomage"            # https://github.com/apps/<slug>
+# github_fix_app_slug = "ahomage-fix"
+
+[server.intake]
+mode = "poll"                          # no public URL: no /hooks routes, Linear resync every minute.
+                                       # "webhook" needs the vault secrets github/webhook_secret,
+                                       # linear/webhook_secret and slack/signing_secret.
+
+# Per-org intake config, written to the org at start (the org must exist).
+# [server.intake.orgs.hoop.linear]
+# teams = ["ENG"]
+# [[server.intake.orgs.hoop.routes]]
+# when = { team = "ENG" }
+# repo = "hoophq/hoop"
+
+# [server.linear]
+# oauth_client_id = "…"                # OAuth mode; secret linear/oauth_client_secret
+
+# [server.slack]
+# oauth_client_id = "…"                # distributed app only; secret slack/oauth_client_secret
+
+[server.runs]
+default_model   = "claude-sonnet-4-5"
+credential_mode = "local_login"        # runners use the developer's harness login (dev only)
+
+# [server.triage]                      # defaults from triage.md; default_model = runs.default_model
+# default_model = "claude-sonnet-4-5"
+
+[server.gateway]
+mode = "harness-login"                 # dev only: no gateway tokens; production: "gateway" + pricing
+# [server.gateway.pricing."claude-sonnet-4-5"]             # micros per million tokens
+# input = 3000000
+# output = 15000000
+# cache_write = 3750000
+# cache_read = 300000
+
+[server.knowledge]
+indexer_url = "http://127.0.0.1:8081"  # the indexer's internal API
+
+[server.jobs]
+slots = 8
+
+[server.telemetry]
+service_name = "mage-server"
+format       = "text"                  # "json" on Cloud Run / GCE
+filter       = "info,mage_server=debug"
+
+# ---- indexer (`mage start indexer`) -------------------------------------------------------------
+
+[indexer]
+data_dir        = "~/.mage/indexer"    # mirrors/, checkouts/, scip/, tmp/ on local disk
+internal_listen = "127.0.0.1:8081"     # /internal/v1; = server.knowledge.indexer_url
+# checkout_cache_bytes = 21474836480   # 20 GiB
+# bundle_max_bytes     = 2147483648    # 2 GiB SourceBundle cap
+
+[indexer.database]                     # statement_timeout_ms defaults to 60000 here
+url_source = "env:MAGE_DATABASE_URL"
+pool_max   = 6
+
+[indexer.blob]                         # the same store as [server.blob]
+backend = "local"
+root    = "~/.mage/blob"
+
+[indexer.github]                       # the same read app as [server.github]
+client_id       = "Iv1.0000000000000000"
+app_private_key = "env:MAGE_GITHUB_APP_PRIVATE_KEY"
+
+[indexer.internal_auth]                # whose mgi_ tokens /internal/v1 accepts
+issuer = "http://localhost:8080"       # = server.public_url; keys from {issuer}/.well-known/mage/keys.json
+
+# [indexer.workers]                    # pool sizes; parse = 0 means one per core
+# fetch = 2
+# parse = 0
+# bundle_source = 2
+# other = 4
+
+# [indexer.git]
+# git_bin = "git"
+
+[indexer.telemetry]                    # used by `mage start indexer`; `start all` logs with [server.telemetry]
+service_name = "mage-indexer"
+format       = "text"
+
+# ---- runner (`mage start runner`) ---------------------------------------------------------------
+# Holds no server credential: only the one-time bootstrap token and its own Ed25519 key.
+
+[runner]
+environment = "dev"                    # dev profile: no egress proxy, copy forks, no runner Postgres
+isolation   = "dev"                    # must be explicit; refused with environment = "production"
+data_dir    = "~/.mage/runner"         # bases/, forks/, runs/, state.db, credentials.json
+server_url  = "http://localhost:8080"  # = server.public_url
+max_envs    = 2
+
+[runner.link]
+name            = "dev-runner"         # = the name given to `mage admin runner-token create`
+bootstrap_token = "file:~/.config/mage/runner-bootstrap"    # used once, then deleted
+
+# Harnesses whose binary is missing are not offered; the server's `runs.credential_mode =
+# "local_login"` uses each CLI's own login from `dev_agent_dir` / `dev_config_dir`.
+[runner.harness.omp]
+binary        = "omp"                  # on PATH; supported = ">=18.3, <19"
+dev_agent_dir = "~/.omp-mage/agent"
+
+[runner.harness.claude]
+binary         = "claude"              # on PATH; supported = ">=2.1.269, <2.2"
+dev_config_dir = "~/.claude-mage"
+
+[runner.daemon]
+slots   = { light = 2, work = 1, verify = 1 }
+browser = true                         # Playwright via `npx --no-install playwright` in dev
+
+# [runner.postgres]                    # runner-local Postgres for recipe databases
+# url = "postgres://mage_runner@127.0.0.1:5432/postgres"    # password: MAGE_RUNNER_POSTGRES_PASSWORD
+
+[runner.telemetry]                     # used by `mage start runner`
+service_name = "mage-runner"
+format       = "text"
