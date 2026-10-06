@@ -43,7 +43,9 @@ name = "aho-base"
 version = "0.0.1"
 dependencies = [
  "aho-cap",
+ "context-files",
  "hooks-claude-code",
+ "jobs-digest",
  "llm-anthropic-messages",
  "llm-openai-completions",
  "llm-openai-responses",
@@ -75,6 +77,7 @@ dependencies = [
  "tool-todo",
  "tool-web",
  "tool-workflow",
+ "verify-gate",
  "world-host",
  "world-ns",
  "world-ssh",
@@ -97,6 +100,7 @@ version = "0.0.1"
 dependencies = [
  "aho-cap",
  "aho-config",
+ "aho-llm",
  "aho-log",
  "aho-policy",
  "aho-types",
@@ -244,6 +248,7 @@ name = "aho-llm"
 version = "0.0.1"
 dependencies = [
  "aho-cap",
+ "aho-config",
  "aho-log",
  "aho-types",
  "serde_json",
@@ -1324,6 +1329,18 @@ name = "constant_time_eq"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
+
+[[package]]
+name = "context-files"
+version = "0.0.1"
+dependencies = [
+ "aho-cap",
+ "aho-config",
+ "aho-fs",
+ "aho-log",
+ "aho-types",
+ "serde_json",
+]
 
 [[package]]
 name = "core-foundation"
@@ -2849,6 +2866,17 @@ checksum = "38c0b942f458fe50cdac086d2f946512305e5631e720728f2a61aabcd47a6264"
 dependencies = [
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "jobs-digest"
+version = "0.0.1"
+dependencies = [
+ "aho-cap",
+ "aho-config",
+ "aho-log",
+ "aho-types",
+ "serde_json",
 ]
 
 [[package]]
@@ -4826,6 +4854,7 @@ dependencies = [
  "aho-approval",
  "aho-cap",
  "aho-config",
+ "aho-llm",
  "aho-log",
  "aho-policy",
  "aho-session",
@@ -5881,6 +5910,20 @@ name = "vcpkg"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
+
+[[package]]
+name = "verify-gate"
+version = "0.0.1"
+dependencies = [
+ "aho-cap",
+ "aho-config",
+ "aho-fs",
+ "aho-log",
+ "aho-proc",
+ "aho-types",
+ "serde_json",
+ "tokio",
+]
 
 [[package]]
 name = "version_check"
