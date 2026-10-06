@@ -1,0 +1,38 @@
+{
+  "run_id": "run_01j9z3k4m5n6p7q8r9s0t1v2x4",
+  "org_id": "org_01j9z3k4m5n6p7q8r9s0t1v2w3",
+  "attempt": 2,
+  "kind": "diagnose",
+  "lease": { "lease_ttl_ms": 60000, "heartbeat_every_ms": 15000 },
+  "repo": { "repo_id": "repo_01j9z3k4m5n6p7q8r9s0t1v2z6", "owner": "hoophq", "name": "billing" },
+  "sha": "3f2a1c9e5b7d4f6a8c0e2b4d6f8a0c2e4b6d8f0a",
+  "source": {
+    "what": {
+      "type": "source_bundle",
+      "data": { "repo_id": "repo_01j9z3k4m5n6p7q8r9s0t1v2z6", "sha": "3f2a1c9e5b7d4f6a8c0e2b4d6f8a0c2e4b6d8f0a" }
+    },
+    "url": "https://storage.googleapis.com/mage-artifacts/bundles/0a1b.tar.zst?X-Goog-Signature=00ff",
+    "bytes": 1048576,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "expires_at": "2026-10-05T12:30:00Z"
+  },
+  "recipe": {
+    "hash": "9c1e5a7b3d2f4e6a8b0c1d3e5f7a9b2c4d6e8f0a1b3c5d7e9f2a4b6c8d0e1f3a",
+    "toml": "version = 1\n\n[services.api]\ncommand = \"npm start\"\n"
+  },
+  "harness": {
+    "kind": "claude_code",
+    "model": "claude-sonnet-4-5",
+    "credential_mode": "gateway",
+    "prompt": "Reproduce cause 1 \"Null customer on invoice export\".",
+    "system_append": "You are Mage's diagnostic agent."
+  },
+  "verify": null,
+  "downloads": [],
+  "knowledge": { "url": "https://mage.example.com/mcp/knowledge", "knowledge_token": "mgk_eyJhbGciOiJFZERTQSJ9.e30.c2ln" },
+  "gateway": { "base_url": "https://mage.example.com/llm/anthropic", "gateway_token": "mgg_eyJhbGciOiJFZERTQSJ9.e30.c2ln" },
+  "budget": { "max_wall": 2700000, "max_turns": 150, "max_cost_micros": 15000000, "max_gate_attempts": 2 },
+  "prior_feedback": ["Repro gate attempt 1 failed: the script did not fail the same way in a clean fork."],
+  "fix": null,
+  "trace": "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+}

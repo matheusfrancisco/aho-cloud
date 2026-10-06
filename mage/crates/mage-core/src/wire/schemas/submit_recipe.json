@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mage:submit_recipe:v1",
+  "title": "submit_recipe",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["toml", "notes"],
+  "properties": {
+    "toml": { "type": "string", "minLength": 1, "maxLength": 65536,
+      "description": "The complete .mage/env.toml recipe (version = 1). Keep the workspace file in sync." },
+    "notes": { "type": "string", "minLength": 0, "maxLength": 16384,
+      "description": "Markdown notes for the reviewer: what you found, what you assumed, what is faked." }
+  }
+}

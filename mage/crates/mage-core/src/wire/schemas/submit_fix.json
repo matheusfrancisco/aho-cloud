@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mage:submit_fix:v1",
+  "title": "submit_fix",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary"],
+  "properties": {
+    "summary": { "type": "string", "minLength": 1, "maxLength": 8192,
+      "description": "Markdown: what you changed and why. Mage computes the patch from your working tree; edits under .mage/, lockfiles without manifest changes and generated files are discarded, workflow edits are rejected." }
+  }
+}

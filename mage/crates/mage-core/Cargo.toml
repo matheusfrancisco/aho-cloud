@@ -1,0 +1,36 @@
+[package]
+name = "mage-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+testing = []
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+time.workspace = true
+uuid.workspace = true
+sha2.workspace = true
+hex.workspace = true
+toml.workspace = true
+ed25519-dalek.workspace = true
+base64.workspace = true
+async-trait.workspace = true
+ts-rs.workspace = true
+regex.workspace = true
+futures-core.workspace = true
+bytes.workspace = true
+url.workspace = true
+parking_lot.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+tempfile.workspace = true

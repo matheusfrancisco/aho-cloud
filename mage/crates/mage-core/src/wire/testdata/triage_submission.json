@@ -1,0 +1,25 @@
+{
+  "summary": "Invoice export crashes for customers without a billing address.",
+  "causes": [
+    {
+      "title": "Null customer on invoice export",
+      "explanation": "exportInvoice dereferences customer.billing without a null check.",
+      "evidence": [
+        {
+          "path": "src/billing/export.ts",
+          "start_line": 120,
+          "end_line": 140,
+          "quote": "const addr = customer.billing.address;",
+          "note": "dereferences billing without a null check"
+        },
+        { "path": "src/billing/totals.ts", "start_line": 88, "end_line": 96 }
+      ],
+      "repro_steps": ["Create a customer without a billing address", "Export one of their invoices"],
+      "confirm_if": "The export fails with \"Cannot read properties of null\".",
+      "rule_out_if": "Customers without a billing address export fine.",
+      "confidence": 0.7,
+      "method": "ui"
+    }
+  ],
+  "missing_info": ["Which customer account was affected?"]
+}

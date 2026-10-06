@@ -1,0 +1,487 @@
+{
+  "Arch": ["x86_64", "aarch64"],
+  "Os": ["macos", "linux"],
+  "ExecutorKind": ["host", "aho"],
+  "CredentialModeKind": ["local_login", "gateway", "vertex"],
+  "HarnessAvailability": [{ "kind": "omp", "version": "18.3.1", "credential_modes": ["gateway", "local_login"] }],
+  "Capabilities": [
+    {
+      "arch": "aarch64",
+      "os": "macos",
+      "executor": "host",
+      "harnesses": [
+        { "kind": "omp", "version": "18.3.1", "credential_modes": ["gateway"] },
+        { "kind": "claude_code", "version": "2.1.269", "credential_modes": ["gateway", "vertex"] }
+      ],
+      "browser": true,
+      "slots": { "light": 4, "work": 1, "verify": 2 }
+    }
+  ],
+  "SlotClass": ["light", "work", "verify"],
+  "SlotCounts": [{ "light": 4, "work": 1, "verify": 2 }],
+  "PreparedBaseKey": [
+    {
+      "repo_id": "repo_01j9z3k4m5n6p7q8r9s0t1v2z6",
+      "sha": "3f2a1c9e5b7d4f6a8c0e2b4d6f8a0c2e4b6d8f0a",
+      "recipe_hash": "9c1e5a7b3d2f4e6a8b0c1d3e5f7a9b2c4d6e8f0a1b3c5d7e9f2a4b6c8d0e1f3a"
+    },
+    { "repo_id": "repo_01j9z3k4m5n6p7q8r9s0t1v2z6", "sha": "3f2a1c9e5b7d4f6a8c0e2b4d6f8a0c2e4b6d8f0a", "recipe_hash": null }
+  ],
+  "RegisterGrant": [
+    {
+      "type": "bootstrap",
+      "bootstrap_token": "mgb_V2hhdCBpcyB0aGlzPw",
+      "name": "gce-r1",
+      "public_key": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+    },
+    { "type": "assertion", "runner_id": "rnr_01j9z3k4m5n6p7q8r9s0t1v3f2", "assertion": "eyJhbGciOiJFZERTQSJ9.e30.c2ln" }
+  ],
+  "Registration": [
+    {
+      "grant": { "type": "assertion", "runner_id": "rnr_01j9z3k4m5n6p7q8r9s0t1v3f2", "assertion": "eyJhbGciOiJFZERTQSJ9.e30.c2ln" },
+      "instance_id": "0192f0a4-3b5c-7d6e-8f90-a1b2c3d4e5f6",
+      "version": "0.1.0",
+      "capabilities": {
+        "arch": "x86_64",
+        "os": "linux",
+        "executor": "host",
+        "harnesses": [{ "kind": "omp", "version": "18.3.1", "credential_modes": ["gateway"] }],
+        "browser": false,
+        "slots": { "light": 2, "work": 1, "verify": 1 }
+      },
+      "held": [{ "run_id": "run_01j9z3k4m5n6p7q8r9s0t1v2x4", "attempt": 1 }]
+    }
+  ],
+  "HeldRun": [{ "run_id": "run_01j9z3k4m5n6p7q8r9s0t1v2x4", "attempt": 1 }],
+  "LeaseTerms": [{ "lease_ttl_ms": 60000, "heartbeat_every_ms": 15000 }],
+  "RegistrationAck": [
+    {
+      "runner_id": "rnr_01j9z3k4m5n6p7q8r9s0t1v3f2",
+      "runner_token": "mgr_eyJhbGciOiJFZERTQSJ9.e30.c2ln",
+      "expires_at": "2026-10-05T12:15:00Z",
+      "released": [{ "run_id": "run_01j9z3k4m5n6p7q8r9s0t1v2x4", "attempt": 1, "status": "queued" }],
+      "lease_ttl_ms": 60000,
+      "heartbeat_every_ms": 15000,
+      "long_poll_max_ms": 25000,
+      "min_version": "0.1.0"
+    }
+  ],
+  "ReleasedRun": [{ "run_id": "run_01j9z3k4m5n6p7q8r9s0t1v2x4", "attempt": 3, "status": "errored" }],
+  "LeaseRequest": [
+    {
+      "request_id": "0192f0a4-3b5c-7d6e-8f90-a1b2c3d4e5f7",
+      "wait_ms": 25000,
+      "free": { "light": 4, "work": 0, "verify": 2 },
+      "prepared": [{ "repo_id": "repo_01j9z3k4m5n6p7q8r9s0t1v2z6", "sha": "3f2a1c9e5b7d4f6a8c0e2b4d6f8a0c2e4b6d8f0a", "recipe_hash": null }]
+    }
+  ],
+  "LeaseResponse": [
+    { "assignment": null },
+    {
+      "assignment": {
+        "run_id": "run_01j9z3k4m5n6p7q8r9s0t1v2x4",
+        "org_id": "org_01j9z3k4m5n6p7q8r9s0t1v2w3",
+        "attempt": 1,
+        "kind": "triage",
+        "lease": { "lease_ttl_ms": 60000, "heartbeat_every_ms": 15000 },
+        "repo": null,
+        "sha": null,
+        "source": null,
+        "recipe": null,
+        "harness": { "kind": "omp", "model": "claude-sonnet-4-5", "credential_mode": "gateway", "prompt": "Ticket ENG-412", "system_append": "" },
+        "verify": null,
+        "downloads": [],
+        "knowledge": { "url": "https://mage.example.com/mcp/knowledge", "knowledge_token": "mgk_a.b.c" },
+        "gateway": { "base_url": "https://mage.example.com/llm/anthropic", "gateway_token": "mgg_a.b.c" },
+        "budget": { "max_wall": 600000, "max_turns": 40, "max_cost_micros": 3000000, "max_gate_attempts": 3 },
+        "prior_feedback": [],
+        "fix": null,
+        "trace": null
+      }
+    }
+  ],
+  "RunAssignment": [
+    {
+      "run_id": "run_01j9z3k4m5n6p7q8r9s0t1v2y5",
+      "org_id": "org_01j9z3k4m5n6p7q8r9s0t1v2w3",
+      "attempt": 1,
+      "kind": "verify",
+      "lease": { "lease_ttl_ms": 60000, "heartbeat_every_ms": 15000 },
+      "repo": { "repo_id": "repo_01j9z3k4m5n6p7q8r9s0t1v2z6", "owner": "hoophq", "name": "billing" },
+      "sha": "3f2a1c9e5b7d4f6a8c0e2b4d6f8a0c2e4b6d8f0a",
+      "source": {
+        "what": { "type": "source_bundle", "data": { "repo_id": "repo_01j9z3k4m5n6p7q8r9s0t1v2z6", "sha": "3f2a1c9e5b7d4f6a8c0e2b4d6f8a0c2e4b6d8f0a" } },
+        "url": "https://storage.example/bundle",
+        "bytes": 1048576,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "expires_at": "2026-10-05T12:30:00Z"
+      },
+      "recipe": { "hash": "9c1e5a7b3d2f4e6a8b0c1d3e5f7a9b2c4d6e8f0a1b3c5d7e9f2a4b6c8d0e1f3a", "toml": "version = 1\n" },
+      "harness": null,
+      "verify": {
+        "type": "fix",
+        "patch": "art_01j9z3k4m5n6p7q8r9s0t1v3b8",
+        "script": "art_01j9z3k4m5n6p7q8r9s0t1v3a7",
+        "signature": { "kind": "assertion_text", "value": "expected 3 rows", "matcher": "contains" },
+        "repetitions": 2,
+        "regression": {
+          "path": ".mage/regressions/eng-412-null-customer.spec.ts",
+          "script": "art_01j9z3k4m5n6p7q8r9s0t1v3a7",
+          "script_sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+        },
+        "mode": "exact",
+        "upstream_check": false
+      },
+      "downloads": [
+        {
+          "what": { "type": "artifact", "data": "art_01j9z3k4m5n6p7q8r9s0t1v3b8" },
+          "url": "https://storage.example/patch",
+          "bytes": 512,
+          "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+          "expires_at": "2026-10-05T12:15:00Z"
+        }
+      ],
+      "knowledge": null,
+      "gateway": null,
+      "budget": { "max_wall": 1800000, "max_turns": 4294967295, "max_cost_micros": 18446744073709551615, "max_gate_attempts": 0 },
+      "prior_feedback": [],
+      "fix": null,
+      "trace": null
+    },
+    {
+      "run_id": "run_01j9z3k4m5n6p7q8r9s0t1v2x4",
+      "org_id": "org_01j9z3k4m5n6p7q8r9s0t1v2w3",
+      "attempt": 1,
+      "kind": "fix",
+      "lease": { "lease_ttl_ms": 60000, "heartbeat_every_ms": 15000 },
+      "repo": { "repo_id": "repo_01j9z3k4m5n6p7q8r9s0t1v2z6", "owner": "hoophq", "name": "billing" },
+      "sha": "3f2a1c9e5b7d4f6a8c0e2b4d6f8a0c2e4b6d8f0a",
+      "source": null,
+      "recipe": { "hash": "9c1e5a7b3d2f4e6a8b0c1d3e5f7a9b2c4d6e8f0a1b3c5d7e9f2a4b6c8d0e1f3a", "toml": "version = 1\n" },
+      "harness": { "kind": "omp", "model": "claude-sonnet-4-5", "credential_mode": "local_login", "prompt": "# Fix brief", "system_append": "" },
+      "verify": null,
+      "downloads": [],
+      "knowledge": null,
+      "gateway": null,
+      "budget": { "max_wall": 2700000, "max_turns": 150, "max_cost_micros": 15000000, "max_gate_attempts": 3 },
+      "prior_feedback": [],
+      "fix": {
+        "brief": "art_01j9z3k4m5n6p7q8r9s0t1v3c9",
+        "script": "art_01j9z3k4m5n6p7q8r9s0t1v3a7",
+        "script_sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+        "signature": { "kind": "error_string", "value": "Cannot read properties of null", "matcher": "contains" },
+        "policy": {
+          "allow_workflow_edits": false,
+          "lockfiles": "with_manifest",
+          "generated": ["dist/**"],
+          "limits": { "max_patch_bytes": 1048576, "max_files": 50, "max_changed_lines": 5000, "max_file_bytes": 262144 }
+        },
+        "regression": { "type": "repo_tests", "dir": "tests/regressions" }
+      },
+      "trace": null
+    }
+  ],
+  "RepoRef": [{ "repo_id": "repo_01j9z3k4m5n6p7q8r9s0t1v2z6", "owner": "hoophq", "name": "billing" }],
+  "RecipeRef": [{ "hash": "9c1e5a7b3d2f4e6a8b0c1d3e5f7a9b2c4d6e8f0a1b3c5d7e9f2a4b6c8d0e1f3a", "toml": "version = 1\n" }],
+  "KnowledgeAccess": [{ "url": "https://mage.example.com/mcp/knowledge", "knowledge_token": "mgk_a.b.c" }],
+  "GatewayAccess": [{ "base_url": "https://mage.example.com/llm/anthropic", "gateway_token": "mgg_a.b.c" }],
+  "HarnessAssignment": [
+    { "kind": "claude_code", "model": "claude-opus-4-1", "credential_mode": "vertex", "prompt": "Learn how to run this repo.", "system_append": "Call submit_recipe." }
+  ],
+  "FixSpec": [
+    {
+      "brief": "art_01j9z3k4m5n6p7q8r9s0t1v3c9",
+      "script": "art_01j9z3k4m5n6p7q8r9s0t1v3a7",
+      "script_sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+      "signature": { "kind": "exit_code", "value": "1", "matcher": "exact" },
+      "policy": {
+        "allow_workflow_edits": true,
+        "lockfiles": "exclude",
+        "generated": [],
+        "limits": { "max_patch_bytes": 1048576, "max_files": 50, "max_changed_lines": 5000, "max_file_bytes": 262144 }
+      },
+      "regression": { "type": "mage_dir" }
+    }
+  ],
+  "DownloadRef": [
+    { "type": "source_bundle", "data": { "repo_id": "repo_01j9z3k4m5n6p7q8r9s0t1v2z6", "sha": "3f2a1c9e5b7d4f6a8c0e2b4d6f8a0c2e4b6d8f0a" } },
+    { "type": "artifact", "data": "art_01j9z3k4m5n6p7q8r9s0t1v3a7" }
+  ],
+  "Download": [
+    {
+      "what": { "type": "artifact", "data": "art_01j9z3k4m5n6p7q8r9s0t1v3a7" },
+      "url": "https://storage.example/script",
+      "bytes": 2048,
+      "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+      "expires_at": "2026-10-05T12:15:00Z"
+    }
+  ],
+  "RunnerPhase": ["preparing", "running", "awaiting_gate", "finishing"],
+  "HeartbeatRequest": [{ "attempt": 2, "phase": "awaiting_gate" }],
+  "HeartbeatAck": [{ "status": "running", "lease_ttl_ms": 60000, "heartbeat_every_ms": 15000, "commands_pending": true }],
+  "OutboundEvent": [{ "local_seq": 17, "at": "2026-10-05T12:00:05Z", "kind": { "type": "notice", "data": "base ready" } }],
+  "OutboundEventKind": [
+    { "type": "assistant_text", "data": "Looking at the export path." },
+    { "type": "tool_call", "data": { "name": "read_file", "args_preview": "{\"path\":\"src/billing/export.ts\"}" } },
+    { "type": "tool_result", "data": { "name": "read_file", "ok": true, "preview": "   120\tconst addr = customer.billing.address;" } },
+    { "type": "usage", "data": { "input_tokens": 12000, "output_tokens": 800, "cost_micros": 52000, "turns": 3, "wall": 0 } },
+    { "type": "notice", "data": "2 events dropped" },
+    { "type": "error", "data": "harness exited with status 1" }
+  ],
+  "EventsRequest": [
+    {
+      "attempt": 1,
+      "events": [
+        { "local_seq": 1, "at": "2026-10-05T12:00:01Z", "kind": { "type": "assistant_text", "data": "Starting." } },
+        { "local_seq": 2, "at": "2026-10-05T12:00:02Z", "kind": { "type": "tool_call", "data": { "name": "exec", "args_preview": "npm test" } } }
+      ]
+    }
+  ],
+  "EventsAck": [{ "acked_local_seq": 2, "last_seq": 41, "status": "running" }],
+  "CommandsQuery": [{ "attempt": 1, "after": 3, "wait_ms": 25000 }],
+  "CommandEnvelope": [
+    {
+      "seq": 1,
+      "attempt": 1,
+      "issued_at": "2026-10-05T12:05:00Z",
+      "command": { "type": "abort", "reason": { "type": "cancelled", "by": "usr_01j9z3k4m5n6p7q8r9s0t1v3e1" } }
+    },
+    {
+      "seq": 2,
+      "attempt": 1,
+      "issued_at": "2026-10-05T12:06:00Z",
+      "command": { "type": "gate_feedback", "gate_id": "gat_01j9z3k4m5n6p7q8r9s0t1v3d0", "kind": "boot", "attempt": 1, "outcome": { "type": "passed" } }
+    }
+  ],
+  "CommandBatch": [
+    { "commands": [], "status": "running" },
+    {
+      "commands": [
+        { "seq": 9, "attempt": 3, "issued_at": "2026-10-05T13:00:00Z", "command": { "type": "abort", "reason": { "type": "infra" } } }
+      ],
+      "status": "errored"
+    }
+  ],
+  "ArtifactSpec": [
+    { "kind": "script", "name": "invoice.spec.ts", "bytes": 2048, "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae", "content_type": "text/plain" }
+  ],
+  "UploadRequest": [
+    {
+      "attempt": 1,
+      "kind": "video",
+      "name": "repetition-1.mp4",
+      "bytes": 7340032,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "content_type": "video/mp4"
+    }
+  ],
+  "UploadGrant": [
+    {
+      "artifact_id": "art_01j9z3k4m5n6p7q8r9s0t1v3a7",
+      "url": "https://storage.example/upload?sig=00",
+      "method": "PUT",
+      "headers": [["Content-Type", "text/plain"]],
+      "expires_at": "2026-10-05T12:15:00Z",
+      "already_complete": false
+    }
+  ],
+  "CompleteUploadRequest": [{ "attempt": 1 }],
+  "ArtifactState": ["pending", "complete"],
+  "CompleteUploadAck": [{ "artifact_id": "art_01j9z3k4m5n6p7q8r9s0t1v3a7", "state": "complete" }],
+  "RefreshDownloadsRequest": [
+    {
+      "attempt": 1,
+      "refs": [
+        { "type": "source_bundle", "data": { "repo_id": "repo_01j9z3k4m5n6p7q8r9s0t1v2z6", "sha": "3f2a1c9e5b7d4f6a8c0e2b4d6f8a0c2e4b6d8f0a" } },
+        { "type": "artifact", "data": "art_01j9z3k4m5n6p7q8r9s0t1v3b8" }
+      ]
+    }
+  ],
+  "RefreshDownloadsResponse": [
+    {
+      "downloads": [
+        {
+          "what": { "type": "artifact", "data": "art_01j9z3k4m5n6p7q8r9s0t1v3b8" },
+          "url": "https://storage.example/patch",
+          "bytes": 512,
+          "sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+          "expires_at": "2026-10-05T12:45:00Z"
+        }
+      ]
+    }
+  ],
+  "WireRunResult": [
+    { "kind": "learn", "toml": "version = 1\n", "notes": "Uses docker compose for Postgres." },
+    {
+      "kind": "triage",
+      "summary": "Nothing in the code explains the report.",
+      "causes": [],
+      "missing_info": ["Which page shows the error?"]
+    },
+    {
+      "kind": "diagnose",
+      "verdict": { "type": "reproduced" },
+      "script": "art_01j9z3k4m5n6p7q8r9s0t1v3a7",
+      "signature": { "kind": "error_string", "value": "Cannot read properties of null", "matcher": "contains" },
+      "summary": "Exporting an invoice for a customer without a billing address throws.",
+      "suggested_fix": "Guard customer.billing before reading the address.",
+      "fix_sites": [
+        {
+          "repo_id": "repo_01j9z3k4m5n6p7q8r9s0t1v2z6",
+          "sha": "3f2a1c9e5b7d4f6a8c0e2b4d6f8a0c2e4b6d8f0a",
+          "path": "src/billing/export.ts",
+          "lines": { "start": 120, "end": 124 },
+          "snippet_hash": null,
+          "note": "the dereference"
+        }
+      ]
+    },
+    {
+      "kind": "diagnose",
+      "verdict": { "type": "inconclusive", "reason": "the staging seed has no such customer" },
+      "script": null,
+      "signature": null,
+      "summary": "Could not build the failing state.",
+      "suggested_fix": null,
+      "fix_sites": []
+    },
+    {
+      "kind": "verify",
+      "outcome": { "type": "completed" },
+      "observed": { "kind": "error_string", "value": "TypeError: Cannot read properties of null (reading 'address')", "matcher": "exact" },
+      "attempts": [
+        {
+          "index": 1,
+          "kind": "script",
+          "script_exit": 1,
+          "script_passed": false,
+          "status": "failed",
+          "observed": [{ "kind": "error_string", "value": "TypeError: Cannot read properties of null (reading 'address')", "matcher": "exact" }],
+          "health_ok": true,
+          "duration_ms": 4200
+        }
+      ],
+      "artifacts": ["art_01j9z3k4m5n6p7q8r9s0t1v3b8"],
+      "fix_checks": null,
+      "rebased_patch": null
+    },
+    {
+      "kind": "verify",
+      "outcome": { "type": "boot_failed", "reason": "migrate exited 1" },
+      "observed": null,
+      "attempts": [],
+      "artifacts": [],
+      "fix_checks": {
+        "applied_patch_sha256": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae",
+        "boot": false,
+        "test_exit": null,
+        "lint_exit": null,
+        "source_applies": true,
+        "upstream_already_fixed": null
+      },
+      "rebased_patch": "art_01j9z3k4m5n6p7q8r9s0t1v3c9"
+    },
+    {
+      "kind": "fix",
+      "patch": "art_01j9z3k4m5n6p7q8r9s0t1v3b8",
+      "summary": "Guard the missing billing address.",
+      "excluded": ["package-lock.json"],
+      "stats": { "files": 2, "added": 10, "removed": 3 }
+    }
+  ],
+  "TriageSubmission": [
+    {
+      "summary": "Invoice export crashes.",
+      "causes": [
+        {
+          "title": "Null billing",
+          "explanation": "No null check.",
+          "evidence": [{ "path": "src/billing/export.ts", "start_line": 120, "end_line": 121, "quote": "customer.billing.address" }],
+          "repro_steps": [],
+          "confirm_if": "It throws.",
+          "rule_out_if": "It does not throw.",
+          "confidence": 0.5,
+          "method": "api"
+        }
+      ],
+      "missing_info": []
+    }
+  ],
+  "CauseDraftDto": [
+    {
+      "title": "Stale cache",
+      "explanation": "The cache key ignores the tenant.",
+      "evidence": [{ "path": "src/cache.rs", "start_line": 10, "end_line": 12, "note": "key built here" }],
+      "repro_steps": ["Switch tenants"],
+      "confirm_if": "Tenant B sees tenant A's totals.",
+      "rule_out_if": "Totals differ per tenant.",
+      "confidence": 0.25,
+      "method": "job"
+    }
+  ],
+  "CitationDraftDto": [
+    { "path": "src/cache.rs", "start_line": 10, "end_line": 12 },
+    { "path": "src/cache.rs", "start_line": 10, "end_line": 12, "quote": "let key = format!(\"{id}\");", "note": "tenant missing" }
+  ],
+  "SubmitResultRequest": [
+    {
+      "attempt": 1,
+      "submission_id": "0192f0a4-3b5c-7d6e-8f90-a1b2c3d4e5f8",
+      "result": { "kind": "fix", "patch": "art_01j9z3k4m5n6p7q8r9s0t1v3b8", "summary": "Guard.", "excluded": [], "stats": { "files": 1, "added": 2, "removed": 0 } }
+    }
+  ],
+  "SubmitAck": [
+    {
+      "status": "awaiting_gate",
+      "gate": { "gate_id": "gat_01j9z3k4m5n6p7q8r9s0t1v3d0", "kind": "repro", "attempt": 1 },
+      "message": "Submitted. Repro gate attempt 1 is running in a clean fork. End your turn now; feedback will follow."
+    },
+    { "status": "succeeded", "gate": null, "message": "Accepted 3 causes. End your turn." }
+  ],
+  "GateTicket": [{ "gate_id": "gat_01j9z3k4m5n6p7q8r9s0t1v3d0", "kind": "evidence", "attempt": 2 }],
+  "Rejection": [
+    {
+      "gate": { "gate_id": "gat_01j9z3k4m5n6p7q8r9s0t1v3d0", "kind": "evidence", "attempt": 1 },
+      "message": "REJECTED (attempt 1 of 2).",
+      "items": [{ "path": "causes[0].evidence[1]", "reason": "path not found at 3f2a1c9e" }]
+    }
+  ],
+  "RejectionItem": [{ "path": "causes[0].evidence[1]", "reason": "path not found at 3f2a1c9e" }],
+  "FinishReport": [{ "outcome": { "type": "done" }, "message": null }],
+  "FinishOutcome": [
+    { "type": "done" },
+    { "type": "no_result" },
+    { "type": "failed", "stage": "prepare", "reason": "disk full", "retryable": true },
+    { "type": "abandoned" }
+  ],
+  "FinishRequest": [{ "attempt": 2, "outcome": { "type": "failed", "stage": "harness", "reason": "protocol error", "retryable": false }, "message": "omp exited" }],
+  "FinishAck": [{ "status": "succeeded" }],
+  "WireErrorCode": [
+    "invalid",
+    "unsupported_protocol",
+    "unauthorized",
+    "forbidden",
+    "not_found",
+    "lease_lost",
+    "run_terminal",
+    "invalid_state",
+    "idempotency_mismatch",
+    "too_large",
+    "rejected",
+    "rate_limited",
+    "internal",
+    "unavailable"
+  ],
+  "WireError": [
+    { "code": "run_terminal", "message": "run already terminal", "status": "cancelled", "details": [], "retry_after_ms": null, "gate": null },
+    { "code": "rate_limited", "message": "slow down", "status": null, "details": [], "retry_after_ms": 1000, "gate": null },
+    {
+      "code": "rejected",
+      "message": "REJECTED (attempt 1 of 2).",
+      "status": null,
+      "details": [{ "path": "causes[0].evidence[0]", "reason": "quote not found in or near these lines" }],
+      "retry_after_ms": null,
+      "gate": { "gate_id": "gat_01j9z3k4m5n6p7q8r9s0t1v3d0", "kind": "evidence", "attempt": 1 }
+    }
+  ]
+}

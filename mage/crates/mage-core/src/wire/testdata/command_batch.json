@@ -1,0 +1,29 @@
+{
+  "commands": [
+    {
+      "seq": 4,
+      "attempt": 2,
+      "issued_at": "2026-10-05T12:01:00Z",
+      "command": { "type": "steer", "text": "Check the export path first.", "by": "usr_01j9z3k4m5n6p7q8r9s0t1v3e1" }
+    },
+    {
+      "seq": 5,
+      "attempt": 2,
+      "issued_at": "2026-10-05T12:07:30Z",
+      "command": {
+        "type": "gate_feedback",
+        "gate_id": "gat_01j9z3k4m5n6p7q8r9s0t1v3d0",
+        "kind": "repro",
+        "attempt": 1,
+        "outcome": { "type": "failed", "reason": "signature mismatch", "details": "expected error_string contains \"Cannot read properties of null\"", "attempts_left": 1 }
+      }
+    },
+    {
+      "seq": 6,
+      "attempt": 2,
+      "issued_at": "2026-10-05T12:40:00Z",
+      "command": { "type": "abort", "reason": { "type": "budget", "limit": "wall" } }
+    }
+  ],
+  "status": "timed_out"
+}

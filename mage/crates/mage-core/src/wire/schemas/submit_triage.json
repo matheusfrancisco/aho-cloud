@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mage:submit_triage:v1",
+  "title": "submit_triage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "causes", "missing_info"],
+  "properties": {
+    "summary": { "type": "string", "minLength": 1, "maxLength": 2000,
+      "description": "What the ticket reports and what you found, in 1-5 sentences." },
+    "causes": { "type": "array", "minItems": 0, "maxItems": 5,
+      "items": { "$ref": "#/$defs/cause" },
+      "description": "Most likely first. Empty only if no cause has evidence." },
+    "missing_info": { "type": "array", "minItems": 0, "maxItems": 5,
+      "items": { "type": "string", "minLength": 1, "maxLength": 300 },
+      "description": "Questions for the reporter that would narrow the cause." }
+  },
+  "if": { "properties": { "causes": { "maxItems": 0 } } },
+  "then": { "properties": { "missing_info": { "minItems": 1 } } },
+  "$defs": {
+    "cause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "explanation", "evidence", "repro_steps",
+                   "confirm_if", "rule_out_if", "confidence", "method"],
+      "properties": {
+        "title":       { "type": "string", "minLength": 1, "maxLength": 120 },
+        "explanation": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "evidence":    { "type": "array", "minItems": 1, "maxItems": 8,
+                         "items": { "$ref": "#/$defs/citation" } },
+        "repro_steps": { "type": "array", "minItems": 0, "maxItems": 12,
+                         "items": { "type": "string", "minLength": 1, "maxLength": 500 } },
+        "confirm_if":  { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "rule_out_if": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "confidence":  { "type": "number", "minimum": 0, "maximum": 1 },
+        "method":      { "type": "string", "enum": ["ui", "api", "job", "unknown"] }
+      }
+    },
+    "citation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "start_line", "end_line"],
+      "properties": {
+        "path":       { "type": "string", "minLength": 1, "maxLength": 1024,
+                        "description": "Repo-relative path at the target commit." },
+        "start_line": { "type": "integer", "minimum": 1 },
+        "end_line":   { "type": "integer", "minimum": 1,
+                        "description": "Inclusive; end_line - start_line < 200." },
+        "quote":      { "type": "string", "minLength": 1, "maxLength": 2000,
+                        "description": "Verbatim text from the cited lines (1-10 lines)." },
+        "note":       { "type": "string", "minLength": 1, "maxLength": 200,
+                        "description": "Why this location matters." }
+      }
+    }
+  }
+}

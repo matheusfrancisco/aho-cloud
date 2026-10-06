@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mage:submit_diagnosis:v1",
+  "title": "submit_diagnosis",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "summary"],
+  "properties": {
+    "verdict": { "type": "string", "enum": ["reproduced", "not_reproduced", "inconclusive"] },
+    "summary": { "type": "string", "minLength": 1, "maxLength": 16384,
+      "description": "Markdown: what you did, what failed, and why." },
+    "reason": { "type": "string", "minLength": 1, "maxLength": 4096,
+      "description": "Required for inconclusive: what blocked a reproduction." },
+    "script": { "type": "string", "minLength": 1, "maxLength": 4096,
+      "description": "Workspace path of the repro script: *.spec.ts / *.spec.js / *.spec.mjs / *.test.ts / *.test.js (Playwright) or *.sh (shell)." },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value", "matcher"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["assertion_text", "http_status", "error_string", "exit_code"] },
+        "value": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "matcher": { "type": "string", "enum": ["exact", "contains", "regex"] }
+      },
+      "description": "How the script fails when the bug is present. assertion_text only with Playwright, exit_code only with shell; http_status is three digits with matcher exact."
+    },
+    "suggested_fix": { "type": "string", "minLength": 1, "maxLength": 8192,
+      "description": "Markdown: the change you would make, if you know it." },
+    "fix_sites": { "type": "array", "minItems": 0, "maxItems": 8,
+      "items": { "$ref": "#/$defs/citation" },
+      "description": "Code locations a fix would touch." }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "verdict": { "const": "inconclusive" } } },
+      "then": { "required": ["reason"] },
+      "else": { "required": ["script", "signature"] }
+    }
+  ],
+  "$defs": {
+    "citation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "start_line", "end_line"],
+      "properties": {
+        "path":       { "type": "string", "minLength": 1, "maxLength": 1024,
+                        "description": "Repo-relative path at the target commit." },
+        "start_line": { "type": "integer", "minimum": 1 },
+        "end_line":   { "type": "integer", "minimum": 1,
+                        "description": "Inclusive; end_line - start_line < 200." },
+        "quote":      { "type": "string", "minLength": 1, "maxLength": 2000,
+                        "description": "Verbatim text from the cited lines (1-10 lines)." },
+        "note":       { "type": "string", "minLength": 1, "maxLength": 200,
+                        "description": "Why this location matters." }
+      }
+    }
+  }
+}
