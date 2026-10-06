@@ -1,0 +1,274 @@
+{
+  "lang": "tsx",
+  "status": {
+    "type": "ok"
+  },
+  "symbols": [
+    {
+      "ord": 0,
+      "name": "Banner",
+      "qualified": "Banner",
+      "kind": "function",
+      "container": null,
+      "span": {
+        "start": 4,
+        "end": 14
+      },
+      "name_pos": [
+        4,
+        17
+      ],
+      "signature": "export function Banner({ error }: { error?: string }) {",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 1,
+      "name": "onRetry",
+      "qualified": "Banner.onRetry",
+      "kind": "function",
+      "container": 0,
+      "span": {
+        "start": 6,
+        "end": 6
+      },
+      "name_pos": [
+        6,
+        9
+      ],
+      "signature": "const onRetry = () => toast.error(t(\"errors.connection_not_found\"));",
+      "doc": null,
+      "exported": true
+    }
+  ],
+  "refs": [
+    {
+      "ord": 0,
+      "name": "react",
+      "qualifier": "React",
+      "kind": "import",
+      "pos": [
+        1,
+        19
+      ],
+      "enclosing": null
+    },
+    {
+      "ord": 1,
+      "name": "react-i18next",
+      "qualifier": null,
+      "kind": "import",
+      "pos": [
+        2,
+        39
+      ],
+      "enclosing": null
+    },
+    {
+      "ord": 2,
+      "name": "useTranslation",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        5,
+        17
+      ],
+      "enclosing": 0
+    },
+    {
+      "ord": 3,
+      "name": "error",
+      "qualifier": "toast",
+      "kind": "call",
+      "pos": [
+        6,
+        31
+      ],
+      "enclosing": 1
+    },
+    {
+      "ord": 4,
+      "name": "t",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        6,
+        37
+      ],
+      "enclosing": 1
+    },
+    {
+      "ord": 5,
+      "name": "Alert",
+      "qualifier": null,
+      "kind": "render",
+      "pos": [
+        8,
+        6
+      ],
+      "enclosing": 0
+    },
+    {
+      "ord": 6,
+      "name": "Trans",
+      "qualifier": null,
+      "kind": "render",
+      "pos": [
+        9,
+        8
+      ],
+      "enclosing": 0
+    },
+    {
+      "ord": 7,
+      "name": "Warning",
+      "qualifier": "Icons",
+      "kind": "render",
+      "pos": [
+        10,
+        14
+      ],
+      "enclosing": 0
+    }
+  ],
+  "literals": [
+    {
+      "ord": 0,
+      "parts": [
+        {
+          "type": "text",
+          "data": "react"
+        }
+      ],
+      "pos": [
+        1,
+        19
+      ],
+      "enclosing": null,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 1,
+      "parts": [
+        {
+          "type": "text",
+          "data": "react-i18next"
+        }
+      ],
+      "pos": [
+        2,
+        39
+      ],
+      "enclosing": null,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 2,
+      "parts": [
+        {
+          "type": "text",
+          "data": "errors.connection_not_found"
+        }
+      ],
+      "pos": [
+        6,
+        39
+      ],
+      "enclosing": 1,
+      "context": {
+        "callee": "t",
+        "arg_index": 0,
+        "siblings": [],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 3,
+      "parts": [
+        {
+          "type": "text",
+          "data": "error"
+        }
+      ],
+      "pos": [
+        8,
+        21
+      ],
+      "enclosing": 0,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "attribute",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": "severity"
+      }
+    },
+    {
+      "ord": 4,
+      "parts": [
+        {
+          "type": "text",
+          "data": "errors.retry_later"
+        }
+      ],
+      "pos": [
+        9,
+        22
+      ],
+      "enclosing": 0,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "attribute",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": "i18nKey"
+      }
+    },
+    {
+      "ord": 5,
+      "parts": [
+        {
+          "type": "text",
+          "data": "Something went wrong"
+        }
+      ],
+      "pos": [
+        11,
+        17
+      ],
+      "enclosing": 0,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    }
+  ]
+}

@@ -1,0 +1,574 @@
+{
+  "lang": "clojure",
+  "status": {
+    "type": "ok"
+  },
+  "symbols": [
+    {
+      "ord": 0,
+      "name": "app.handler",
+      "qualified": "app.handler",
+      "kind": "module",
+      "container": null,
+      "span": {
+        "start": 1,
+        "end": 5
+      },
+      "name_pos": [
+        1,
+        5
+      ],
+      "signature": "(ns app.handler",
+      "doc": "HTTP handlers.",
+      "exported": true
+    },
+    {
+      "ord": 1,
+      "name": ":app.handler/name",
+      "qualified": ":app.handler/name",
+      "kind": "type_alias",
+      "container": null,
+      "span": {
+        "start": 7,
+        "end": 7
+      },
+      "name_pos": [
+        7,
+        8
+      ],
+      "signature": "(s/def ::name string?)",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 2,
+      "name": "get-user",
+      "qualified": "app.handler/get-user",
+      "kind": "function",
+      "container": null,
+      "span": {
+        "start": 9,
+        "end": 14
+      },
+      "name_pos": [
+        9,
+        7
+      ],
+      "signature": "(defn get-user",
+      "doc": "Returns a user.",
+      "exported": true
+    },
+    {
+      "ord": 3,
+      "name": "sync!",
+      "qualified": "app.handler/sync!",
+      "kind": "function",
+      "container": null,
+      "span": {
+        "start": 16,
+        "end": 21
+      },
+      "name_pos": [
+        16,
+        8
+      ],
+      "signature": "(defn- sync! [conn]",
+      "doc": null,
+      "exported": false
+    },
+    {
+      "ord": 4,
+      "name": "render",
+      "qualified": "app.handler/render",
+      "kind": "function",
+      "container": null,
+      "span": {
+        "start": 23,
+        "end": 23
+      },
+      "name_pos": [
+        23,
+        11
+      ],
+      "signature": "(defmulti render :type)",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 5,
+      "name": "render",
+      "qualified": "app.handler/render",
+      "kind": "function",
+      "container": null,
+      "span": {
+        "start": 24,
+        "end": 24
+      },
+      "name_pos": [
+        24,
+        12
+      ],
+      "signature": "(defmethod render :default [x] (str \"unknown \" (:type x)))",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 6,
+      "name": "Store",
+      "qualified": "app.handler/Store",
+      "kind": "interface",
+      "container": null,
+      "span": {
+        "start": 25,
+        "end": 25
+      },
+      "name_pos": [
+        25,
+        14
+      ],
+      "signature": "(defprotocol Store (fetch [this id]))",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 7,
+      "name": "MemStore",
+      "qualified": "app.handler/MemStore",
+      "kind": "struct",
+      "container": null,
+      "span": {
+        "start": 26,
+        "end": 26
+      },
+      "name_pos": [
+        26,
+        12
+      ],
+      "signature": "(defrecord MemStore [data])",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 8,
+      "name": "cache",
+      "qualified": "app.handler/cache",
+      "kind": "variable",
+      "container": null,
+      "span": {
+        "start": 27,
+        "end": 27
+      },
+      "name_pos": [
+        27,
+        16
+      ],
+      "signature": "(def ^:private cache (atom {}))",
+      "doc": null,
+      "exported": false
+    },
+    {
+      "ord": 9,
+      "name": "get-user-test",
+      "qualified": "app.handler/get-user-test",
+      "kind": "test",
+      "container": null,
+      "span": {
+        "start": 28,
+        "end": 28
+      },
+      "name_pos": [
+        28,
+        10
+      ],
+      "signature": "(deftest get-user-test (is (= 404 (:status (get-user {})))))",
+      "doc": null,
+      "exported": false
+    }
+  ],
+  "refs": [
+    {
+      "ord": 0,
+      "name": "clojure.tools.logging",
+      "qualifier": "log",
+      "kind": "import",
+      "pos": [
+        3,
+        14
+      ],
+      "enclosing": 0
+    },
+    {
+      "ord": 1,
+      "name": "clojure.spec.alpha",
+      "qualifier": "s",
+      "kind": "import",
+      "pos": [
+        4,
+        14
+      ],
+      "enclosing": 0
+    },
+    {
+      "ord": 2,
+      "name": "ring.util.response",
+      "qualifier": null,
+      "kind": "import",
+      "pos": [
+        5,
+        14
+      ],
+      "enclosing": 0
+    },
+    {
+      "ord": 3,
+      "name": "if-let",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        12,
+        4
+      ],
+      "enclosing": 2
+    },
+    {
+      "ord": 4,
+      "name": "find-user",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        12,
+        18
+      ],
+      "enclosing": 2
+    },
+    {
+      "ord": 5,
+      "name": "response",
+      "qualifier": "ring.util.response",
+      "kind": "call",
+      "pos": [
+        13,
+        6
+      ],
+      "enclosing": 2
+    },
+    {
+      "ord": 6,
+      "name": "try",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        17,
+        4
+      ],
+      "enclosing": 3
+    },
+    {
+      "ord": 7,
+      "name": "do-sync",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        18,
+        6
+      ],
+      "enclosing": 3
+    },
+    {
+      "ord": 8,
+      "name": "catch",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        19,
+        6
+      ],
+      "enclosing": 3
+    },
+    {
+      "ord": 9,
+      "name": "error",
+      "qualifier": "clojure.tools.logging",
+      "kind": "call",
+      "pos": [
+        20,
+        12
+      ],
+      "enclosing": 3
+    },
+    {
+      "ord": 10,
+      "name": "throw",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        21,
+        8
+      ],
+      "enclosing": 3
+    },
+    {
+      "ord": 11,
+      "name": "ex-info",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        21,
+        15
+      ],
+      "enclosing": 3
+    },
+    {
+      "ord": 12,
+      "name": "format",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        21,
+        24
+      ],
+      "enclosing": 3
+    },
+    {
+      "ord": 13,
+      "name": ".getMessage",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        21,
+        50
+      ],
+      "enclosing": 3
+    },
+    {
+      "ord": 14,
+      "name": "str",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        24,
+        33
+      ],
+      "enclosing": 5
+    },
+    {
+      "ord": 15,
+      "name": "fetch",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        25,
+        21
+      ],
+      "enclosing": 6
+    },
+    {
+      "ord": 16,
+      "name": "atom",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        27,
+        23
+      ],
+      "enclosing": 8
+    },
+    {
+      "ord": 17,
+      "name": "is",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        28,
+        25
+      ],
+      "enclosing": 9
+    },
+    {
+      "ord": 18,
+      "name": "=",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        28,
+        29
+      ],
+      "enclosing": 9
+    },
+    {
+      "ord": 19,
+      "name": "get-user",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        28,
+        45
+      ],
+      "enclosing": 9
+    }
+  ],
+  "literals": [
+    {
+      "ord": 0,
+      "parts": [
+        {
+          "type": "text",
+          "data": "HTTP handlers."
+        }
+      ],
+      "pos": [
+        2,
+        3
+      ],
+      "enclosing": 0,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 1,
+      "parts": [
+        {
+          "type": "text",
+          "data": "Returns a user."
+        }
+      ],
+      "pos": [
+        10,
+        3
+      ],
+      "enclosing": 2,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 2,
+      "parts": [
+        {
+          "type": "text",
+          "data": "user not found"
+        }
+      ],
+      "pos": [
+        14,
+        34
+      ],
+      "enclosing": 2,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [
+          {
+            "type": "int",
+            "data": 404
+          }
+        ],
+        "construct": "map_value",
+        "exception_type": null,
+        "map_key": ":message",
+        "attribute": null
+      }
+    },
+    {
+      "ord": 3,
+      "parts": [
+        {
+          "type": "text",
+          "data": "sync failed for"
+        }
+      ],
+      "pos": [
+        20,
+        20
+      ],
+      "enclosing": 3,
+      "context": {
+        "callee": "log/error",
+        "arg_index": 1,
+        "siblings": [
+          {
+            "type": "ident",
+            "data": "e"
+          },
+          {
+            "type": "other"
+          }
+        ],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 4,
+      "parts": [
+        {
+          "type": "text",
+          "data": "sync failed: %s"
+        }
+      ],
+      "pos": [
+        21,
+        31
+      ],
+      "enclosing": 3,
+      "context": {
+        "callee": "ex-info",
+        "arg_index": 0,
+        "siblings": [
+          {
+            "type": "other"
+          }
+        ],
+        "construct": "throw",
+        "exception_type": "ex-info",
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 5,
+      "parts": [
+        {
+          "type": "text",
+          "data": "unknown "
+        },
+        {
+          "type": "hole",
+          "data": {
+            "type": "concat",
+            "expr": "(:type x)"
+          }
+        }
+      ],
+      "pos": [
+        24,
+        37
+      ],
+      "enclosing": 5,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    }
+  ]
+}

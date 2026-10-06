@@ -1,0 +1,451 @@
+{
+  "lang": "python",
+  "status": {
+    "type": "ok"
+  },
+  "symbols": [
+    {
+      "ord": 0,
+      "name": "MAX_RETRY",
+      "qualified": "MAX_RETRY",
+      "kind": "constant",
+      "container": null,
+      "span": {
+        "start": 6,
+        "end": 6
+      },
+      "name_pos": [
+        6,
+        1
+      ],
+      "signature": "MAX_RETRY = 3",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 1,
+      "name": "logger",
+      "qualified": "logger",
+      "kind": "variable",
+      "container": null,
+      "span": {
+        "start": 7,
+        "end": 7
+      },
+      "name_pos": [
+        7,
+        1
+      ],
+      "signature": "logger = logging.getLogger(__name__)",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 2,
+      "name": "ConnectionService",
+      "qualified": "ConnectionService",
+      "kind": "class",
+      "container": null,
+      "span": {
+        "start": 10,
+        "end": 21
+      },
+      "name_pos": [
+        10,
+        7
+      ],
+      "signature": "class ConnectionService(Base):",
+      "doc": "Manages connections.",
+      "exported": true
+    },
+    {
+      "ord": 3,
+      "name": "name",
+      "qualified": "ConnectionService.name",
+      "kind": "method",
+      "container": 2,
+      "span": {
+        "start": 13,
+        "end": 15
+      },
+      "name_pos": [
+        14,
+        9
+      ],
+      "signature": "@property\n    def name(self):",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 4,
+      "name": "connect",
+      "qualified": "ConnectionService.connect",
+      "kind": "method",
+      "container": 2,
+      "span": {
+        "start": 17,
+        "end": 21
+      },
+      "name_pos": [
+        17,
+        9
+      ],
+      "signature": "def connect(self, host, n, m):",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 5,
+      "name": "_render",
+      "qualified": "_render",
+      "kind": "function",
+      "container": null,
+      "span": {
+        "start": 24,
+        "end": 27
+      },
+      "name_pos": [
+        24,
+        5
+      ],
+      "signature": "def _render(name, count):",
+      "doc": null,
+      "exported": false
+    }
+  ],
+  "refs": [
+    {
+      "ord": 0,
+      "name": "logging",
+      "qualifier": null,
+      "kind": "import",
+      "pos": [
+        2,
+        8
+      ],
+      "enclosing": null
+    },
+    {
+      "ord": 1,
+      "name": "os.path",
+      "qualifier": "osp",
+      "kind": "import",
+      "pos": [
+        3,
+        8
+      ],
+      "enclosing": null
+    },
+    {
+      "ord": 2,
+      "name": "fastapi",
+      "qualifier": null,
+      "kind": "import",
+      "pos": [
+        4,
+        6
+      ],
+      "enclosing": null
+    },
+    {
+      "ord": 3,
+      "name": "getLogger",
+      "qualifier": "logging",
+      "kind": "call",
+      "pos": [
+        7,
+        18
+      ],
+      "enclosing": 1
+    },
+    {
+      "ord": 4,
+      "name": "ValueError",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        19,
+        19
+      ],
+      "enclosing": 4
+    },
+    {
+      "ord": 5,
+      "name": "error",
+      "qualifier": "logger",
+      "kind": "call",
+      "pos": [
+        20,
+        16
+      ],
+      "enclosing": 4
+    },
+    {
+      "ord": 6,
+      "name": "HTTPException",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        21,
+        15
+      ],
+      "enclosing": 4
+    },
+    {
+      "ord": 7,
+      "name": "format",
+      "qualifier": "\"x{}of{}\"",
+      "kind": "call",
+      "pos": [
+        26,
+        26
+      ],
+      "enclosing": 5
+    }
+  ],
+  "literals": [
+    {
+      "ord": 0,
+      "parts": [
+        {
+          "type": "text",
+          "data": "Connection service."
+        }
+      ],
+      "pos": [
+        1,
+        1
+      ],
+      "enclosing": null,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 1,
+      "parts": [
+        {
+          "type": "text",
+          "data": "Manages connections."
+        }
+      ],
+      "pos": [
+        11,
+        5
+      ],
+      "enclosing": 2,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 2,
+      "parts": [
+        {
+          "type": "text",
+          "data": "service"
+        }
+      ],
+      "pos": [
+        15,
+        16
+      ],
+      "enclosing": 3,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "return",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 3,
+      "parts": [
+        {
+          "type": "text",
+          "data": "bad host"
+        }
+      ],
+      "pos": [
+        19,
+        30
+      ],
+      "enclosing": 4,
+      "context": {
+        "callee": "ValueError",
+        "arg_index": 0,
+        "siblings": [],
+        "construct": "raise",
+        "exception_type": "ValueError",
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 4,
+      "parts": [
+        {
+          "type": "text",
+          "data": "retry %d/%d failed for %s"
+        }
+      ],
+      "pos": [
+        20,
+        22
+      ],
+      "enclosing": 4,
+      "context": {
+        "callee": "logger.error",
+        "arg_index": 0,
+        "siblings": [
+          {
+            "type": "ident",
+            "data": "n"
+          },
+          {
+            "type": "ident",
+            "data": "m"
+          },
+          {
+            "type": "ident",
+            "data": "host"
+          }
+        ],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 5,
+      "parts": [
+        {
+          "type": "text",
+          "data": "item not found"
+        }
+      ],
+      "pos": [
+        21,
+        53
+      ],
+      "enclosing": 4,
+      "context": {
+        "callee": "HTTPException",
+        "arg_index": 1,
+        "siblings": [
+          {
+            "type": "int",
+            "data": 404
+          }
+        ],
+        "construct": "raise",
+        "exception_type": "HTTPException",
+        "map_key": "detail",
+        "attribute": null
+      }
+    },
+    {
+      "ord": 6,
+      "parts": [
+        {
+          "type": "text",
+          "data": "hello "
+        },
+        {
+          "type": "hole",
+          "data": {
+            "type": "interp",
+            "expr": "name"
+          }
+        },
+        {
+          "type": "text",
+          "data": ", {count} = "
+        },
+        {
+          "type": "hole",
+          "data": {
+            "type": "interp",
+            "expr": "count"
+          }
+        }
+      ],
+      "pos": [
+        25,
+        11
+      ],
+      "enclosing": 5,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 7,
+      "parts": [
+        {
+          "type": "text",
+          "data": "x {} of {}"
+        }
+      ],
+      "pos": [
+        26,
+        13
+      ],
+      "enclosing": 5,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 8,
+      "parts": [
+        {
+          "type": "text",
+          "data": "y %s"
+        }
+      ],
+      "pos": [
+        26,
+        49
+      ],
+      "enclosing": 5,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    }
+  ]
+}

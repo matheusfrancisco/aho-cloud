@@ -1,0 +1,748 @@
+{
+  "lang": "go",
+  "status": {
+    "type": "ok"
+  },
+  "symbols": [
+    {
+      "ord": 0,
+      "name": "api",
+      "qualified": "api",
+      "kind": "module",
+      "container": null,
+      "span": {
+        "start": 2,
+        "end": 2
+      },
+      "name_pos": [
+        2,
+        9
+      ],
+      "signature": "package api",
+      "doc": "Package api serves connections.",
+      "exported": true
+    },
+    {
+      "ord": 1,
+      "name": "MaxRetries",
+      "qualified": "MaxRetries",
+      "kind": "constant",
+      "container": null,
+      "span": {
+        "start": 13,
+        "end": 13
+      },
+      "name_pos": [
+        13,
+        7
+      ],
+      "signature": "const MaxRetries = 3",
+      "doc": "MaxRetries bounds retries.",
+      "exported": true
+    },
+    {
+      "ord": 2,
+      "name": "defaultName",
+      "qualified": "defaultName",
+      "kind": "variable",
+      "container": null,
+      "span": {
+        "start": 15,
+        "end": 15
+      },
+      "name_pos": [
+        15,
+        5
+      ],
+      "signature": "var defaultName = \"conn\"",
+      "doc": null,
+      "exported": false
+    },
+    {
+      "ord": 3,
+      "name": "Server",
+      "qualified": "Server",
+      "kind": "struct",
+      "container": null,
+      "span": {
+        "start": 19,
+        "end": 21
+      },
+      "name_pos": [
+        19,
+        6
+      ],
+      "signature": "type Server struct {",
+      "doc": "Server serves connections.\nIt is safe for concurrent use.",
+      "exported": true
+    },
+    {
+      "ord": 4,
+      "name": "Store",
+      "qualified": "Store",
+      "kind": "interface",
+      "container": null,
+      "span": {
+        "start": 23,
+        "end": 25
+      },
+      "name_pos": [
+        23,
+        6
+      ],
+      "signature": "type Store interface {",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 5,
+      "name": "Connect",
+      "qualified": "Server.Connect",
+      "kind": "method",
+      "container": 3,
+      "span": {
+        "start": 28,
+        "end": 34
+      },
+      "name_pos": [
+        28,
+        18
+      ],
+      "signature": "func (s *Server) Connect(name string) error {",
+      "doc": "Connect opens the connection.",
+      "exported": true
+    },
+    {
+      "ord": 6,
+      "name": "handler",
+      "qualified": "handler",
+      "kind": "function",
+      "container": null,
+      "span": {
+        "start": 36,
+        "end": 38
+      },
+      "name_pos": [
+        36,
+        6
+      ],
+      "signature": "func handler(w http.ResponseWriter, r *http.Request) {",
+      "doc": null,
+      "exported": false
+    },
+    {
+      "ord": 7,
+      "name": "getItem",
+      "qualified": "getItem",
+      "kind": "function",
+      "container": null,
+      "span": {
+        "start": 40,
+        "end": 44
+      },
+      "name_pos": [
+        40,
+        6
+      ],
+      "signature": "func getItem(c *gin.Context) {",
+      "doc": null,
+      "exported": false
+    },
+    {
+      "ord": 8,
+      "name": "raw",
+      "qualified": "raw",
+      "kind": "function",
+      "container": null,
+      "span": {
+        "start": 46,
+        "end": 49
+      },
+      "name_pos": [
+        46,
+        6
+      ],
+      "signature": "func raw() string {",
+      "doc": null,
+      "exported": false
+    }
+  ],
+  "refs": [
+    {
+      "ord": 0,
+      "name": "errors",
+      "qualifier": "errors",
+      "kind": "import",
+      "pos": [
+        5,
+        2
+      ],
+      "enclosing": null
+    },
+    {
+      "ord": 1,
+      "name": "fmt",
+      "qualifier": "fmt",
+      "kind": "import",
+      "pos": [
+        6,
+        2
+      ],
+      "enclosing": null
+    },
+    {
+      "ord": 2,
+      "name": "net/http",
+      "qualifier": "http",
+      "kind": "import",
+      "pos": [
+        7,
+        2
+      ],
+      "enclosing": null
+    },
+    {
+      "ord": 3,
+      "name": "github.com/gin-gonic/gin",
+      "qualifier": "gin",
+      "kind": "import",
+      "pos": [
+        9,
+        2
+      ],
+      "enclosing": null
+    },
+    {
+      "ord": 4,
+      "name": "Server",
+      "qualifier": null,
+      "kind": "type",
+      "pos": [
+        24,
+        21
+      ],
+      "enclosing": 4
+    },
+    {
+      "ord": 5,
+      "name": "Server",
+      "qualifier": null,
+      "kind": "type",
+      "pos": [
+        28,
+        10
+      ],
+      "enclosing": 5
+    },
+    {
+      "ord": 6,
+      "name": "dial",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        29,
+        9
+      ],
+      "enclosing": 5
+    },
+    {
+      "ord": 7,
+      "name": "Errorf",
+      "qualifier": "fmt",
+      "kind": "call",
+      "pos": [
+        31,
+        14
+      ],
+      "enclosing": 5
+    },
+    {
+      "ord": 8,
+      "name": "New",
+      "qualifier": "errors",
+      "kind": "call",
+      "pos": [
+        33,
+        16
+      ],
+      "enclosing": 5
+    },
+    {
+      "ord": 9,
+      "name": "ResponseWriter",
+      "qualifier": "http",
+      "kind": "type",
+      "pos": [
+        36,
+        21
+      ],
+      "enclosing": 6
+    },
+    {
+      "ord": 10,
+      "name": "Request",
+      "qualifier": "http",
+      "kind": "type",
+      "pos": [
+        36,
+        45
+      ],
+      "enclosing": 6
+    },
+    {
+      "ord": 11,
+      "name": "Error",
+      "qualifier": "http",
+      "kind": "call",
+      "pos": [
+        37,
+        7
+      ],
+      "enclosing": 6
+    },
+    {
+      "ord": 12,
+      "name": "Context",
+      "qualifier": "gin",
+      "kind": "type",
+      "pos": [
+        40,
+        21
+      ],
+      "enclosing": 7
+    },
+    {
+      "ord": 13,
+      "name": "JSON",
+      "qualifier": "c",
+      "kind": "call",
+      "pos": [
+        41,
+        4
+      ],
+      "enclosing": 7
+    },
+    {
+      "ord": 14,
+      "name": "H",
+      "qualifier": "gin",
+      "kind": "type",
+      "pos": [
+        41,
+        34
+      ],
+      "enclosing": 7
+    },
+    {
+      "ord": 15,
+      "name": "Param",
+      "qualifier": "c",
+      "kind": "call",
+      "pos": [
+        41,
+        59
+      ],
+      "enclosing": 7
+    },
+    {
+      "ord": 16,
+      "name": "Printf",
+      "qualifier": "log",
+      "kind": "call",
+      "pos": [
+        42,
+        6
+      ],
+      "enclosing": 7
+    },
+    {
+      "ord": 17,
+      "name": "panic",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        43,
+        2
+      ],
+      "enclosing": 7
+    },
+    {
+      "ord": 18,
+      "name": "Sprintf",
+      "qualifier": "fmt",
+      "kind": "call",
+      "pos": [
+        43,
+        12
+      ],
+      "enclosing": 7
+    }
+  ],
+  "literals": [
+    {
+      "ord": 0,
+      "parts": [
+        {
+          "type": "text",
+          "data": "errors"
+        }
+      ],
+      "pos": [
+        5,
+        2
+      ],
+      "enclosing": null,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 1,
+      "parts": [
+        {
+          "type": "text",
+          "data": "fmt"
+        }
+      ],
+      "pos": [
+        6,
+        2
+      ],
+      "enclosing": null,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 2,
+      "parts": [
+        {
+          "type": "text",
+          "data": "net/http"
+        }
+      ],
+      "pos": [
+        7,
+        2
+      ],
+      "enclosing": null,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 3,
+      "parts": [
+        {
+          "type": "text",
+          "data": "github.com/gin-gonic/gin"
+        }
+      ],
+      "pos": [
+        9,
+        2
+      ],
+      "enclosing": null,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 4,
+      "parts": [
+        {
+          "type": "text",
+          "data": "conn"
+        }
+      ],
+      "pos": [
+        15,
+        19
+      ],
+      "enclosing": 2,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 5,
+      "parts": [
+        {
+          "type": "text",
+          "data": "failed fetching connection %s: %w"
+        }
+      ],
+      "pos": [
+        31,
+        21
+      ],
+      "enclosing": 5,
+      "context": {
+        "callee": "fmt.Errorf",
+        "arg_index": 0,
+        "siblings": [
+          {
+            "type": "ident",
+            "data": "name"
+          },
+          {
+            "type": "ident",
+            "data": "err"
+          }
+        ],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 6,
+      "parts": [
+        {
+          "type": "text",
+          "data": "connection refused by \"peer\"\n"
+        }
+      ],
+      "pos": [
+        33,
+        20
+      ],
+      "enclosing": 5,
+      "context": {
+        "callee": "errors.New",
+        "arg_index": 0,
+        "siblings": [],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 7,
+      "parts": [
+        {
+          "type": "text",
+          "data": "session expired"
+        }
+      ],
+      "pos": [
+        37,
+        16
+      ],
+      "enclosing": 6,
+      "context": {
+        "callee": "http.Error",
+        "arg_index": 1,
+        "siblings": [
+          {
+            "type": "ident",
+            "data": "w"
+          },
+          {
+            "type": "ident",
+            "data": "http.StatusUnauthorized"
+          }
+        ],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 8,
+      "parts": [
+        {
+          "type": "text",
+          "data": "message"
+        }
+      ],
+      "pos": [
+        41,
+        36
+      ],
+      "enclosing": 7,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 9,
+      "parts": [
+        {
+          "type": "text",
+          "data": "item "
+        },
+        {
+          "type": "hole",
+          "data": {
+            "type": "concat",
+            "expr": "c.Param(\"id\")"
+          }
+        },
+        {
+          "type": "text",
+          "data": " not found"
+        }
+      ],
+      "pos": [
+        41,
+        47
+      ],
+      "enclosing": 7,
+      "context": {
+        "callee": "c.JSON",
+        "arg_index": 1,
+        "siblings": [
+          {
+            "type": "ident",
+            "data": "http.StatusNotFound"
+          }
+        ],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": "message",
+        "attribute": null
+      }
+    },
+    {
+      "ord": 10,
+      "parts": [
+        {
+          "type": "text",
+          "data": "id"
+        }
+      ],
+      "pos": [
+        41,
+        65
+      ],
+      "enclosing": 7,
+      "context": {
+        "callee": "c.Param",
+        "arg_index": 0,
+        "siblings": [],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 11,
+      "parts": [
+        {
+          "type": "text",
+          "data": "request %s took %dms"
+        }
+      ],
+      "pos": [
+        42,
+        13
+      ],
+      "enclosing": 7,
+      "context": {
+        "callee": "log.Printf",
+        "arg_index": 0,
+        "siblings": [
+          {
+            "type": "ident",
+            "data": "c.Request.URL"
+          },
+          {
+            "type": "int",
+            "data": 5
+          }
+        ],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 12,
+      "parts": [
+        {
+          "type": "text",
+          "data": "unreachable state %d"
+        }
+      ],
+      "pos": [
+        43,
+        20
+      ],
+      "enclosing": 7,
+      "context": {
+        "callee": "panic",
+        "arg_index": 0,
+        "siblings": [],
+        "construct": "panic",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 13,
+      "parts": [
+        {
+          "type": "text",
+          "data": "raw multi\nline"
+        }
+      ],
+      "pos": [
+        47,
+        9
+      ],
+      "enclosing": 8,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "return",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    }
+  ]
+}

@@ -1,0 +1,418 @@
+{
+  "lang": "rust",
+  "status": {
+    "type": "ok"
+  },
+  "symbols": [
+    {
+      "ord": 0,
+      "name": "TokenError",
+      "qualified": "TokenError",
+      "kind": "enum",
+      "container": null,
+      "span": {
+        "start": 6,
+        "end": 9
+      },
+      "name_pos": [
+        6,
+        10
+      ],
+      "signature": "pub enum TokenError {",
+      "doc": "Errors of the token module.",
+      "exported": true
+    },
+    {
+      "ord": 1,
+      "name": "Lease",
+      "qualified": "Lease",
+      "kind": "struct",
+      "container": null,
+      "span": {
+        "start": 11,
+        "end": 13
+      },
+      "name_pos": [
+        11,
+        12
+      ],
+      "signature": "pub struct Lease {",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 2,
+      "name": "renew",
+      "qualified": "Lease::renew",
+      "kind": "method",
+      "container": 1,
+      "span": {
+        "start": 18,
+        "end": 26
+      },
+      "name_pos": [
+        18,
+        12
+      ],
+      "signature": "pub fn renew(&self, map: &HashMap<u64, String>) -> anyhow::Result<()> {",
+      "doc": "Renews the lease.\nFails when expired.",
+      "exported": true
+    },
+    {
+      "ord": 3,
+      "name": "ensure_id",
+      "qualified": "ensure_id",
+      "kind": "macro",
+      "container": null,
+      "span": {
+        "start": 29,
+        "end": 31
+      },
+      "name_pos": [
+        29,
+        14
+      ],
+      "signature": "macro_rules! ensure_id {",
+      "doc": null,
+      "exported": false
+    },
+    {
+      "ord": 4,
+      "name": "renew_works",
+      "qualified": "renew_works",
+      "kind": "test",
+      "container": null,
+      "span": {
+        "start": 34,
+        "end": 36
+      },
+      "name_pos": [
+        34,
+        4
+      ],
+      "signature": "fn renew_works() {",
+      "doc": null,
+      "exported": false
+    }
+  ],
+  "refs": [
+    {
+      "ord": 0,
+      "name": "std::collections::HashMap",
+      "qualifier": null,
+      "kind": "import",
+      "pos": [
+        1,
+        5
+      ],
+      "enclosing": null
+    },
+    {
+      "ord": 1,
+      "name": "anyhow::{bail, Context as _}",
+      "qualifier": null,
+      "kind": "import",
+      "pos": [
+        2,
+        5
+      ],
+      "enclosing": null
+    },
+    {
+      "ord": 2,
+      "name": "String",
+      "qualifier": null,
+      "kind": "type",
+      "pos": [
+        8,
+        13
+      ],
+      "enclosing": 0
+    },
+    {
+      "ord": 3,
+      "name": "Lease",
+      "qualifier": null,
+      "kind": "type",
+      "pos": [
+        15,
+        6
+      ],
+      "enclosing": null
+    },
+    {
+      "ord": 4,
+      "name": "HashMap",
+      "qualifier": null,
+      "kind": "type",
+      "pos": [
+        18,
+        31
+      ],
+      "enclosing": 2
+    },
+    {
+      "ord": 5,
+      "name": "String",
+      "qualifier": null,
+      "kind": "type",
+      "pos": [
+        18,
+        44
+      ],
+      "enclosing": 2
+    },
+    {
+      "ord": 6,
+      "name": "Result",
+      "qualifier": null,
+      "kind": "type",
+      "pos": [
+        18,
+        64
+      ],
+      "enclosing": 2
+    },
+    {
+      "ord": 7,
+      "name": "bail",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        20,
+        13
+      ],
+      "enclosing": 2
+    },
+    {
+      "ord": 8,
+      "name": "warn",
+      "qualifier": "tracing",
+      "kind": "call",
+      "pos": [
+        22,
+        18
+      ],
+      "enclosing": 2
+    },
+    {
+      "ord": 9,
+      "name": "get",
+      "qualifier": "map",
+      "kind": "call",
+      "pos": [
+        23,
+        21
+      ],
+      "enclosing": 2
+    },
+    {
+      "ord": 10,
+      "name": "expect",
+      "qualifier": "map.get(&self.id)",
+      "kind": "call",
+      "pos": [
+        23,
+        35
+      ],
+      "enclosing": 2
+    },
+    {
+      "ord": 11,
+      "name": "ErrorBody",
+      "qualifier": null,
+      "kind": "type",
+      "pos": [
+        24,
+        20
+      ],
+      "enclosing": 2
+    },
+    {
+      "ord": 12,
+      "name": "to_string",
+      "qualifier": "\"leaseconflict\"",
+      "kind": "call",
+      "pos": [
+        24,
+        58
+      ],
+      "enclosing": 2
+    },
+    {
+      "ord": 13,
+      "name": "Ok",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        25,
+        9
+      ],
+      "enclosing": 2
+    },
+    {
+      "ord": 14,
+      "name": "panic",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        35,
+        5
+      ],
+      "enclosing": 4
+    }
+  ],
+  "literals": [
+    {
+      "ord": 0,
+      "parts": [
+        {
+          "type": "text",
+          "data": "invalid token: {0}"
+        }
+      ],
+      "pos": [
+        7,
+        13
+      ],
+      "enclosing": 0,
+      "context": {
+        "callee": null,
+        "arg_index": 0,
+        "siblings": [],
+        "construct": "attribute",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": "error"
+      }
+    },
+    {
+      "ord": 1,
+      "parts": [
+        {
+          "type": "text",
+          "data": "lease {} expired"
+        }
+      ],
+      "pos": [
+        20,
+        19
+      ],
+      "enclosing": 2,
+      "context": {
+        "callee": "bail!",
+        "arg_index": 0,
+        "siblings": [
+          {
+            "type": "other"
+          }
+        ],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 2,
+      "parts": [
+        {
+          "type": "text",
+          "data": "lease lost for {}"
+        }
+      ],
+      "pos": [
+        22,
+        24
+      ],
+      "enclosing": 2,
+      "context": {
+        "callee": "tracing::warn!",
+        "arg_index": 0,
+        "siblings": [
+          {
+            "type": "other"
+          }
+        ],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 3,
+      "parts": [
+        {
+          "type": "text",
+          "data": "lease entry missing"
+        }
+      ],
+      "pos": [
+        23,
+        42
+      ],
+      "enclosing": 2,
+      "context": {
+        "callee": "map.get(&self.id).expect",
+        "arg_index": 0,
+        "siblings": [],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 4,
+      "parts": [
+        {
+          "type": "text",
+          "data": "lease conflict"
+        }
+      ],
+      "pos": [
+        24,
+        41
+      ],
+      "enclosing": 2,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [
+          {
+            "type": "int",
+            "data": 409
+          }
+        ],
+        "construct": "map_value",
+        "exception_type": null,
+        "map_key": "message",
+        "attribute": null
+      }
+    },
+    {
+      "ord": 5,
+      "parts": [
+        {
+          "type": "text",
+          "data": "not \"ready\"\n yet"
+        }
+      ],
+      "pos": [
+        35,
+        12
+      ],
+      "enclosing": 4,
+      "context": {
+        "callee": "panic!",
+        "arg_index": 0,
+        "siblings": [],
+        "construct": "panic",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    }
+  ]
+}

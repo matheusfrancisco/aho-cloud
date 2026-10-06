@@ -1,0 +1,66 @@
+[package]
+name = "mage-indexer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+testing = ["mage-core/testing", "dep:tempfile"]
+
+[dependencies]
+mage-core.workspace = true
+mage-infra.workspace = true
+axum.workspace = true
+tokio.workspace = true
+tree-sitter.workspace = true
+tree-sitter-go.workspace = true
+tree-sitter-javascript.workspace = true
+tree-sitter-python.workspace = true
+tree-sitter-rust.workspace = true
+tree-sitter-typescript.workspace = true
+tree-sitter-clojure-orchard.workspace = true
+scip.workspace = true
+protobuf.workspace = true
+grep-searcher.workspace = true
+grep-regex.workspace = true
+grep-matcher.workspace = true
+ignore.workspace = true
+regex.workspace = true
+zstd.workspace = true
+tar.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+hex.workspace = true
+time.workspace = true
+uuid.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+futures.workspace = true
+bytes.workspace = true
+sqlx.workspace = true
+url.workspace = true
+base64.workspace = true
+ed25519-dalek.workspace = true
+tree-sitter-json.workspace = true
+tree-sitter-yaml.workspace = true
+streaming-iterator.workspace = true
+nix.workspace = true
+sha1.workspace = true
+parking_lot.workspace = true
+tokio-util.workspace = true
+globset.workspace = true
+reqwest.workspace = true
+tempfile = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile.workspace = true
+mage-core = { workspace = true, features = ["testing"] }
+tower.workspace = true
+toml.workspace = true

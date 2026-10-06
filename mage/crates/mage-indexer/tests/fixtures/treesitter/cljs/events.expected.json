@@ -1,0 +1,584 @@
+{
+  "lang": "clojurescript",
+  "status": {
+    "type": "ok"
+  },
+  "symbols": [
+    {
+      "ord": 0,
+      "name": "webapp.connections.events",
+      "qualified": "webapp.connections.events",
+      "kind": "module",
+      "container": null,
+      "span": {
+        "start": 1,
+        "end": 4
+      },
+      "name_pos": [
+        1,
+        5
+      ],
+      "signature": "(ns webapp.connections.events",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 1,
+      "name": ":webapp.connections.events/fetch",
+      "qualified": ":webapp.connections.events/fetch",
+      "kind": "registered",
+      "container": null,
+      "span": {
+        "start": 6,
+        "end": 11
+      },
+      "name_pos": [
+        7,
+        2
+      ],
+      "signature": "(rf/reg-event-fx",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 2,
+      "name": ":connections/loaded",
+      "qualified": ":connections/loaded",
+      "kind": "registered",
+      "container": null,
+      "span": {
+        "start": 13,
+        "end": 16
+      },
+      "name_pos": [
+        14,
+        2
+      ],
+      "signature": "(rf/reg-event-db",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 3,
+      "name": ":webapp.connections.events/list",
+      "qualified": ":webapp.connections.events/list",
+      "kind": "registered",
+      "container": null,
+      "span": {
+        "start": 18,
+        "end": 18
+      },
+      "name_pos": [
+        18,
+        13
+      ],
+      "signature": "(rf/reg-sub ::list (fn [db] (:connections db)))",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 4,
+      "name": "enable-plugin!",
+      "qualified": "webapp.connections.events/enable-plugin!",
+      "kind": "function",
+      "container": null,
+      "span": {
+        "start": 20,
+        "end": 26
+      },
+      "name_pos": [
+        20,
+        7
+      ],
+      "signature": "(defn enable-plugin! [plugin-name]",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 5,
+      "name": "panel",
+      "qualified": "webapp.connections.events/panel",
+      "kind": "function",
+      "container": null,
+      "span": {
+        "start": 28,
+        "end": 30
+      },
+      "name_pos": [
+        28,
+        7
+      ],
+      "signature": "(defn panel []",
+      "doc": null,
+      "exported": true
+    }
+  ],
+  "refs": [
+    {
+      "ord": 0,
+      "name": "re-frame.core",
+      "qualifier": "rf",
+      "kind": "import",
+      "pos": [
+        2,
+        14
+      ],
+      "enclosing": 0
+    },
+    {
+      "ord": 1,
+      "name": "webapp.http",
+      "qualifier": "http",
+      "kind": "import",
+      "pos": [
+        3,
+        14
+      ],
+      "enclosing": 0
+    },
+    {
+      "ord": 2,
+      "name": "webapp.plugins.core",
+      "qualifier": "plugins",
+      "kind": "import",
+      "pos": [
+        4,
+        14
+      ],
+      "enclosing": 0
+    },
+    {
+      "ord": 3,
+      "name": "fn",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        8,
+        3
+      ],
+      "enclosing": 1
+    },
+    {
+      "ord": 4,
+      "name": "assoc",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        9,
+        10
+      ],
+      "enclosing": 1
+    },
+    {
+      "ord": 5,
+      "name": ":webapp.connections.events/loading",
+      "qualifier": null,
+      "kind": "dispatch",
+      "pos": [
+        10,
+        22
+      ],
+      "enclosing": 1
+    },
+    {
+      "ord": 6,
+      "name": "str",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        11,
+        30
+      ],
+      "enclosing": 1
+    },
+    {
+      "ord": 7,
+      "name": "fn",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        15,
+        3
+      ],
+      "enclosing": 2
+    },
+    {
+      "ord": 8,
+      "name": "assoc",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        16,
+        5
+      ],
+      "enclosing": 2
+    },
+    {
+      "ord": 9,
+      "name": "fn",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        18,
+        21
+      ],
+      "enclosing": 3
+    },
+    {
+      "ord": 10,
+      "name": "when-not",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        21,
+        4
+      ],
+      "enclosing": 4
+    },
+    {
+      "ord": 11,
+      "name": "enabled?",
+      "qualifier": "webapp.plugins.core",
+      "kind": "call",
+      "pos": [
+        21,
+        22
+      ],
+      "enclosing": 4
+    },
+    {
+      "ord": 12,
+      "name": "throw",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        22,
+        6
+      ],
+      "enclosing": 4
+    },
+    {
+      "ord": 13,
+      "name": "ex-info",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        22,
+        13
+      ],
+      "enclosing": 4
+    },
+    {
+      "ord": 14,
+      "name": "str",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        22,
+        22
+      ],
+      "enclosing": 4
+    },
+    {
+      "ord": 15,
+      "name": "dispatch",
+      "qualifier": "re-frame.core",
+      "kind": "call",
+      "pos": [
+        23,
+        7
+      ],
+      "enclosing": 4
+    },
+    {
+      "ord": 16,
+      "name": ":show-snackbar",
+      "qualifier": null,
+      "kind": "dispatch",
+      "pos": [
+        23,
+        17
+      ],
+      "enclosing": 4
+    },
+    {
+      "ord": 17,
+      "name": "dispatch",
+      "qualifier": "re-frame.core",
+      "kind": "call",
+      "pos": [
+        24,
+        7
+      ],
+      "enclosing": 4
+    },
+    {
+      "ord": 18,
+      "name": ":webapp.plugins.core/enable",
+      "qualifier": null,
+      "kind": "dispatch",
+      "pos": [
+        24,
+        17
+      ],
+      "enclosing": 4
+    },
+    {
+      "ord": 19,
+      "name": "console.error",
+      "qualifier": "js",
+      "kind": "call",
+      "pos": [
+        25,
+        7
+      ],
+      "enclosing": 4
+    },
+    {
+      "ord": 20,
+      "name": "subscribe",
+      "qualifier": "re-frame.core",
+      "kind": "call",
+      "pos": [
+        26,
+        8
+      ],
+      "enclosing": 4
+    },
+    {
+      "ord": 21,
+      "name": ":webapp.connections.events/list",
+      "qualifier": null,
+      "kind": "dispatch",
+      "pos": [
+        26,
+        19
+      ],
+      "enclosing": 4
+    },
+    {
+      "ord": 22,
+      "name": "let",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        29,
+        4
+      ],
+      "enclosing": 5
+    },
+    {
+      "ord": 23,
+      "name": "subscribe",
+      "qualifier": "re-frame.core",
+      "kind": "call",
+      "pos": [
+        29,
+        20
+      ],
+      "enclosing": 5
+    },
+    {
+      "ord": 24,
+      "name": ":connections/list",
+      "qualifier": null,
+      "kind": "dispatch",
+      "pos": [
+        29,
+        31
+      ],
+      "enclosing": 5
+    },
+    {
+      "ord": 25,
+      "name": "count",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        30,
+        29
+      ],
+      "enclosing": 5
+    }
+  ],
+  "literals": [
+    {
+      "ord": 0,
+      "parts": [
+        {
+          "type": "text",
+          "data": "/api/connections/"
+        },
+        {
+          "type": "hole",
+          "data": {
+            "type": "concat",
+            "expr": "id"
+          }
+        }
+      ],
+      "pos": [
+        11,
+        34
+      ],
+      "enclosing": 1,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [
+          {
+            "type": "ident",
+            "data": ":get"
+          },
+          {
+            "type": "other"
+          }
+        ],
+        "construct": "map_value",
+        "exception_type": null,
+        "map_key": ":uri",
+        "attribute": null
+      }
+    },
+    {
+      "ord": 1,
+      "parts": [
+        {
+          "type": "text",
+          "data": "Plugin "
+        },
+        {
+          "type": "hole",
+          "data": {
+            "type": "concat",
+            "expr": "plugin-name"
+          }
+        },
+        {
+          "type": "text",
+          "data": " is not enabled"
+        }
+      ],
+      "pos": [
+        22,
+        26
+      ],
+      "enclosing": 4,
+      "context": {
+        "callee": "ex-info",
+        "arg_index": 0,
+        "siblings": [
+          {
+            "type": "other"
+          }
+        ],
+        "construct": "throw",
+        "exception_type": "ex-info",
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 2,
+      "parts": [
+        {
+          "type": "text",
+          "data": "Failed to connect"
+        }
+      ],
+      "pos": [
+        23,
+        53
+      ],
+      "enclosing": 4,
+      "context": {
+        "callee": "rf/dispatch",
+        "arg_index": 0,
+        "siblings": [
+          {
+            "type": "ident",
+            "data": ":error"
+          }
+        ],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": ":text",
+        "attribute": null
+      }
+    },
+    {
+      "ord": 3,
+      "parts": [
+        {
+          "type": "text",
+          "data": "plugin error:"
+        }
+      ],
+      "pos": [
+        25,
+        21
+      ],
+      "enclosing": 4,
+      "context": {
+        "callee": "js/console.error",
+        "arg_index": 0,
+        "siblings": [
+          {
+            "type": "ident",
+            "data": "plugin-name"
+          }
+        ],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 4,
+      "parts": [
+        {
+          "type": "text",
+          "data": "panel"
+        }
+      ],
+      "pos": [
+        30,
+        19
+      ],
+      "enclosing": 5,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "map_value",
+        "exception_type": null,
+        "map_key": ":class",
+        "attribute": null
+      }
+    },
+    {
+      "ord": 5,
+      "parts": [
+        {
+          "type": "text",
+          "data": " connections"
+        }
+      ],
+      "pos": [
+        30,
+        42
+      ],
+      "enclosing": 5,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    }
+  ]
+}

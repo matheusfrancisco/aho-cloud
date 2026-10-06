@@ -1,0 +1,333 @@
+{
+  "lang": "javascript",
+  "status": {
+    "type": "ok"
+  },
+  "symbols": [
+    {
+      "ord": 0,
+      "name": "listUsers",
+      "qualified": "listUsers",
+      "kind": "function",
+      "container": null,
+      "span": {
+        "start": 5,
+        "end": 10
+      },
+      "name_pos": [
+        5,
+        10
+      ],
+      "signature": "function listUsers(req, res) {",
+      "doc": "Lists users.",
+      "exported": false
+    },
+    {
+      "ord": 1,
+      "name": "UserError",
+      "qualified": "UserError",
+      "kind": "class",
+      "container": null,
+      "span": {
+        "start": 12,
+        "end": 16
+      },
+      "name_pos": [
+        12,
+        7
+      ],
+      "signature": "class UserError extends Error {",
+      "doc": null,
+      "exported": false
+    },
+    {
+      "ord": 2,
+      "name": "describe",
+      "qualified": "UserError.describe",
+      "kind": "method",
+      "container": 1,
+      "span": {
+        "start": 13,
+        "end": 15
+      },
+      "name_pos": [
+        13,
+        3
+      ],
+      "signature": "describe() {",
+      "doc": null,
+      "exported": false
+    },
+    {
+      "ord": 3,
+      "name": "Greeting",
+      "qualified": "Greeting",
+      "kind": "function",
+      "container": null,
+      "span": {
+        "start": 20,
+        "end": 20
+      },
+      "name_pos": [
+        20,
+        7
+      ],
+      "signature": "const Greeting = ({ name }) => <div className=\"greeting\">Hello {name}</div>;",
+      "doc": null,
+      "exported": false
+    }
+  ],
+  "refs": [
+    {
+      "ord": 0,
+      "name": "require",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        1,
+        17
+      ],
+      "enclosing": null
+    },
+    {
+      "ord": 1,
+      "name": "express",
+      "qualifier": null,
+      "kind": "import",
+      "pos": [
+        1,
+        25
+      ],
+      "enclosing": null
+    },
+    {
+      "ord": 2,
+      "name": "express",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        2,
+        13
+      ],
+      "enclosing": null
+    },
+    {
+      "ord": 3,
+      "name": "status",
+      "qualifier": "res",
+      "kind": "call",
+      "pos": [
+        7,
+        16
+      ],
+      "enclosing": 0
+    },
+    {
+      "ord": 4,
+      "name": "json",
+      "qualifier": "res.status(401)",
+      "kind": "call",
+      "pos": [
+        7,
+        28
+      ],
+      "enclosing": 0
+    },
+    {
+      "ord": 5,
+      "name": "send",
+      "qualifier": "res",
+      "kind": "call",
+      "pos": [
+        9,
+        7
+      ],
+      "enclosing": 0
+    },
+    {
+      "ord": 6,
+      "name": "get",
+      "qualifier": "app",
+      "kind": "call",
+      "pos": [
+        18,
+        5
+      ],
+      "enclosing": null
+    }
+  ],
+  "literals": [
+    {
+      "ord": 0,
+      "parts": [
+        {
+          "type": "text",
+          "data": "express"
+        }
+      ],
+      "pos": [
+        1,
+        25
+      ],
+      "enclosing": null,
+      "context": {
+        "callee": "require",
+        "arg_index": 0,
+        "siblings": [],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 1,
+      "parts": [
+        {
+          "type": "text",
+          "data": "authentication required"
+        }
+      ],
+      "pos": [
+        7,
+        42
+      ],
+      "enclosing": 0,
+      "context": {
+        "callee": "res.status(401).json",
+        "arg_index": 0,
+        "siblings": [],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": "error",
+        "attribute": null
+      }
+    },
+    {
+      "ord": 2,
+      "parts": [
+        {
+          "type": "text",
+          "data": "Hello "
+        },
+        {
+          "type": "hole",
+          "data": {
+            "type": "interp",
+            "expr": "req.user.name"
+          }
+        },
+        {
+          "type": "text",
+          "data": ", you have "
+        },
+        {
+          "type": "hole",
+          "data": {
+            "type": "interp",
+            "expr": "count"
+          }
+        },
+        {
+          "type": "text",
+          "data": " items"
+        }
+      ],
+      "pos": [
+        9,
+        12
+      ],
+      "enclosing": 0,
+      "context": {
+        "callee": "res.send",
+        "arg_index": 0,
+        "siblings": [],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 3,
+      "parts": [
+        {
+          "type": "text",
+          "data": "user error: "
+        },
+        {
+          "type": "hole",
+          "data": {
+            "type": "concat",
+            "expr": "this.message"
+          }
+        }
+      ],
+      "pos": [
+        14,
+        12
+      ],
+      "enclosing": 2,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "return",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 4,
+      "parts": [
+        {
+          "type": "text",
+          "data": "/users"
+        }
+      ],
+      "pos": [
+        18,
+        9
+      ],
+      "enclosing": null,
+      "context": {
+        "callee": "app.get",
+        "arg_index": 0,
+        "siblings": [
+          {
+            "type": "ident",
+            "data": "listUsers"
+          }
+        ],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 5,
+      "parts": [
+        {
+          "type": "text",
+          "data": "greeting"
+        }
+      ],
+      "pos": [
+        20,
+        47
+      ],
+      "enclosing": 3,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "attribute",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": "className"
+      }
+    }
+  ]
+}

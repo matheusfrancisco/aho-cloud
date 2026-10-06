@@ -1,0 +1,569 @@
+{
+  "lang": "typescript",
+  "status": {
+    "type": "ok"
+  },
+  "symbols": [
+    {
+      "ord": 0,
+      "name": "loadConnection",
+      "qualified": "loadConnection",
+      "kind": "function",
+      "container": null,
+      "span": {
+        "start": 6,
+        "end": 12
+      },
+      "name_pos": [
+        6,
+        23
+      ],
+      "signature": "export async function loadConnection(id: string): Promise<Connection> {",
+      "doc": "Loads a connection.",
+      "exported": true
+    },
+    {
+      "ord": 1,
+      "name": "Connection",
+      "qualified": "Connection",
+      "kind": "interface",
+      "container": null,
+      "span": {
+        "start": 14,
+        "end": 17
+      },
+      "name_pos": [
+        14,
+        18
+      ],
+      "signature": "export interface Connection {",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 2,
+      "name": "ConnectionId",
+      "qualified": "ConnectionId",
+      "kind": "type_alias",
+      "container": null,
+      "span": {
+        "start": 19,
+        "end": 19
+      },
+      "name_pos": [
+        19,
+        13
+      ],
+      "signature": "export type ConnectionId = string;",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 3,
+      "name": "Status",
+      "qualified": "Status",
+      "kind": "enum",
+      "container": null,
+      "span": {
+        "start": 21,
+        "end": 21
+      },
+      "name_pos": [
+        21,
+        6
+      ],
+      "signature": "enum Status { Ok, Failed }",
+      "doc": null,
+      "exported": false
+    },
+    {
+      "ord": 4,
+      "name": "ConnectionService",
+      "qualified": "ConnectionService",
+      "kind": "class",
+      "container": null,
+      "span": {
+        "start": 23,
+        "end": 30
+      },
+      "name_pos": [
+        23,
+        14
+      ],
+      "signature": "export class ConnectionService {",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 5,
+      "name": "remove",
+      "qualified": "ConnectionService.remove",
+      "kind": "method",
+      "container": 4,
+      "span": {
+        "start": 26,
+        "end": 29
+      },
+      "name_pos": [
+        26,
+        9
+      ],
+      "signature": "async remove(id: string): Promise<void> {",
+      "doc": null,
+      "exported": true
+    },
+    {
+      "ord": 6,
+      "name": "handler",
+      "qualified": "handler",
+      "kind": "function",
+      "container": null,
+      "span": {
+        "start": 32,
+        "end": 34
+      },
+      "name_pos": [
+        32,
+        14
+      ],
+      "signature": "export const handler = (req: Request, res: Response) => {",
+      "doc": null,
+      "exported": true
+    }
+  ],
+  "refs": [
+    {
+      "ord": 0,
+      "name": "axios",
+      "qualifier": "axios",
+      "kind": "import",
+      "pos": [
+        1,
+        19
+      ],
+      "enclosing": null
+    },
+    {
+      "ord": 1,
+      "name": "./api",
+      "qualifier": "api",
+      "kind": "import",
+      "pos": [
+        2,
+        22
+      ],
+      "enclosing": null
+    },
+    {
+      "ord": 2,
+      "name": "react",
+      "qualifier": null,
+      "kind": "import",
+      "pos": [
+        3,
+        26
+      ],
+      "enclosing": null
+    },
+    {
+      "ord": 3,
+      "name": "Promise",
+      "qualifier": null,
+      "kind": "type",
+      "pos": [
+        6,
+        51
+      ],
+      "enclosing": 0
+    },
+    {
+      "ord": 4,
+      "name": "Connection",
+      "qualifier": null,
+      "kind": "type",
+      "pos": [
+        6,
+        59
+      ],
+      "enclosing": 0
+    },
+    {
+      "ord": 5,
+      "name": "Error",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        8,
+        15
+      ],
+      "enclosing": 0
+    },
+    {
+      "ord": 6,
+      "name": "get",
+      "qualifier": "axios",
+      "kind": "call",
+      "pos": [
+        10,
+        27
+      ],
+      "enclosing": 0
+    },
+    {
+      "ord": 7,
+      "name": "Map",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        24,
+        23
+      ],
+      "enclosing": 4
+    },
+    {
+      "ord": 8,
+      "name": "Connection",
+      "qualifier": null,
+      "kind": "type",
+      "pos": [
+        24,
+        35
+      ],
+      "enclosing": 4
+    },
+    {
+      "ord": 9,
+      "name": "Promise",
+      "qualifier": null,
+      "kind": "type",
+      "pos": [
+        26,
+        29
+      ],
+      "enclosing": 5
+    },
+    {
+      "ord": 10,
+      "name": "error",
+      "qualifier": "console",
+      "kind": "call",
+      "pos": [
+        27,
+        13
+      ],
+      "enclosing": 5
+    },
+    {
+      "ord": 11,
+      "name": "reject",
+      "qualifier": "Promise",
+      "kind": "call",
+      "pos": [
+        28,
+        20
+      ],
+      "enclosing": 5
+    },
+    {
+      "ord": 12,
+      "name": "TypeError",
+      "qualifier": null,
+      "kind": "call",
+      "pos": [
+        28,
+        31
+      ],
+      "enclosing": 5
+    },
+    {
+      "ord": 13,
+      "name": "Request",
+      "qualifier": null,
+      "kind": "type",
+      "pos": [
+        32,
+        30
+      ],
+      "enclosing": 6
+    },
+    {
+      "ord": 14,
+      "name": "Response",
+      "qualifier": null,
+      "kind": "type",
+      "pos": [
+        32,
+        44
+      ],
+      "enclosing": 6
+    },
+    {
+      "ord": 15,
+      "name": "status",
+      "qualifier": "res",
+      "kind": "call",
+      "pos": [
+        33,
+        7
+      ],
+      "enclosing": 6
+    },
+    {
+      "ord": 16,
+      "name": "json",
+      "qualifier": "res.status(404)",
+      "kind": "call",
+      "pos": [
+        33,
+        19
+      ],
+      "enclosing": 6
+    }
+  ],
+  "literals": [
+    {
+      "ord": 0,
+      "parts": [
+        {
+          "type": "text",
+          "data": "axios"
+        }
+      ],
+      "pos": [
+        1,
+        19
+      ],
+      "enclosing": null,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 1,
+      "parts": [
+        {
+          "type": "text",
+          "data": "./api"
+        }
+      ],
+      "pos": [
+        2,
+        22
+      ],
+      "enclosing": null,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 2,
+      "parts": [
+        {
+          "type": "text",
+          "data": "react"
+        }
+      ],
+      "pos": [
+        3,
+        26
+      ],
+      "enclosing": null,
+      "context": {
+        "callee": null,
+        "arg_index": null,
+        "siblings": [],
+        "construct": "other",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 3,
+      "parts": [
+        {
+          "type": "text",
+          "data": "Connection "
+        },
+        {
+          "type": "hole",
+          "data": {
+            "type": "interp",
+            "expr": "id"
+          }
+        },
+        {
+          "type": "text",
+          "data": " not found"
+        }
+      ],
+      "pos": [
+        8,
+        21
+      ],
+      "enclosing": 0,
+      "context": {
+        "callee": "Error",
+        "arg_index": 0,
+        "siblings": [],
+        "construct": "throw",
+        "exception_type": "Error",
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 4,
+      "parts": [
+        {
+          "type": "text",
+          "data": "/api/connections/"
+        },
+        {
+          "type": "hole",
+          "data": {
+            "type": "interp",
+            "expr": "id"
+          }
+        }
+      ],
+      "pos": [
+        10,
+        31
+      ],
+      "enclosing": 0,
+      "context": {
+        "callee": "axios.get",
+        "arg_index": 0,
+        "siblings": [],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 5,
+      "parts": [
+        {
+          "type": "text",
+          "data": "failed removing "
+        },
+        {
+          "type": "hole",
+          "data": {
+            "type": "concat",
+            "expr": "id"
+          }
+        },
+        {
+          "type": "text",
+          "data": " from cache"
+        }
+      ],
+      "pos": [
+        27,
+        19
+      ],
+      "enclosing": 5,
+      "context": {
+        "callee": "console.error",
+        "arg_index": 0,
+        "siblings": [],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 6,
+      "parts": [
+        {
+          "type": "text",
+          "data": "not implemented"
+        }
+      ],
+      "pos": [
+        28,
+        41
+      ],
+      "enclosing": 5,
+      "context": {
+        "callee": "TypeError",
+        "arg_index": 0,
+        "siblings": [],
+        "construct": "call",
+        "exception_type": "TypeError",
+        "map_key": null,
+        "attribute": null
+      }
+    },
+    {
+      "ord": 7,
+      "parts": [
+        {
+          "type": "text",
+          "data": "user not found"
+        }
+      ],
+      "pos": [
+        33,
+        35
+      ],
+      "enclosing": 6,
+      "context": {
+        "callee": "res.status(404).json",
+        "arg_index": 0,
+        "siblings": [
+          {
+            "type": "str"
+          }
+        ],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": "message",
+        "attribute": null
+      }
+    },
+    {
+      "ord": 8,
+      "parts": [
+        {
+          "type": "text",
+          "data": "E_NOT_FOUND"
+        }
+      ],
+      "pos": [
+        33,
+        59
+      ],
+      "enclosing": 6,
+      "context": {
+        "callee": "res.status(404).json",
+        "arg_index": 0,
+        "siblings": [
+          {
+            "type": "str"
+          }
+        ],
+        "construct": "call",
+        "exception_type": null,
+        "map_key": "code",
+        "attribute": null
+      }
+    }
+  ]
+}
