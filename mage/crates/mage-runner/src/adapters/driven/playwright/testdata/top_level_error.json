@@ -1,0 +1,81 @@
+{
+  "config": {
+    "configFile": "/mage/scratch/pw/3/mage.config.mjs",
+    "rootDir": "/mage/scratch/pw/3/tests",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 60000,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {},
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "json",
+        {
+          "outputFile": "./report.json"
+        }
+      ],
+      [
+        "line",
+        null
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/mage/scratch/pw/3/out",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/mage/scratch/pw/3/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 15000
+      }
+    ],
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.57.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [],
+  "errors": [
+    {
+      "message": "SyntaxError: /mage/scratch/pw/3/tests/repro.spec.ts: Unexpected token (3:12)\n\n  1 | import { test } from '@playwright/test';\n  2 | test('broken', async () => {\n> 3 |   const x = ;\n    |             ^\n  4 | });\n  5 |",
+      "stack": "SyntaxError: /mage/scratch/pw/3/tests/repro.spec.ts: Unexpected token (3:12)\n\n  1 | import { test } from '@playwright/test';\n  2 | test('broken', async () => {\n> 3 |   const x = ;\n    |             ^\n  4 | });\n  5 |",
+      "location": {
+        "file": "/mage/scratch/pw/3/tests/repro.spec.ts",
+        "line": 3,
+        "column": 12
+      },
+      "snippet": "   at repro.spec.ts:3\n\n  1 | import { test } from '@playwright/test';\n  2 | test('broken', async () => {\n> 3 |   const x = ;\n    |            ^\n  4 | });\n  5 |"
+    },
+    {
+      "message": "Error: No tests found",
+      "stack": "Error: No tests found"
+    }
+  ],
+  "stats": {
+    "startTime": "2026-10-05T19:49:02.327Z",
+    "duration": 28.98399999999998,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

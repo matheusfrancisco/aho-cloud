@@ -1,0 +1,150 @@
+{
+  "config": {
+    "configFile": "/mage/scratch/pw/3/mage.config.mjs",
+    "rootDir": "/mage/scratch/pw/3/tests",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 60000,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "json",
+        {
+          "outputFile": "./report.json"
+        }
+      ],
+      [
+        "line",
+        null
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/mage/scratch/pw/3/out",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/mage/scratch/pw/3/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 3000
+      }
+    ],
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.57.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "repro.spec.ts",
+      "file": "repro.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "waits forever",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 3000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 3105,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 3000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 3000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 3000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/mage/scratch/pw/3/tests/repro.spec.ts",
+                        "column": 14,
+                        "line": 4
+                      },
+                      "message": "Error: page.waitForSelector: Test timeout of 3000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#never-appears') to be visible\u001b[22m\n\n\n  2 | test('waits forever', async ({ page }) => {\n  3 |   await page.goto('/');\n> 4 |   await page.waitForSelector('#never-appears');\n    |              ^\n  5 | });\n  6 |\n    at /mage/scratch/pw/3/tests/repro.spec.ts:4:14"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-05T19:48:57.296Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/mage/scratch/pw/3/out/repro-waits-forever-chromium/test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/mage/scratch/pw/3/out/repro-waits-forever-chromium/video.webm"
+                    },
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/mage/scratch/pw/3/out/repro-waits-forever-chromium/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/mage/scratch/pw/3/out/repro-waits-forever-chromium/trace.zip"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "39a77a05e0c54e188911-24905775209a2a92832d",
+          "file": "repro.spec.ts",
+          "line": 2,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-05T19:48:57.024Z",
+    "duration": 3497.21,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

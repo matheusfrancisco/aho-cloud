@@ -1,0 +1,153 @@
+{
+  "config": {
+    "configFile": "/mage/scratch/pw/3/mage.config.mjs",
+    "rootDir": "/mage/scratch/pw/3/tests",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 60000,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "reporter": [
+      [
+        "json",
+        {
+          "outputFile": "./report.json"
+        }
+      ],
+      [
+        "line",
+        null
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "quiet": false,
+    "projects": [
+      {
+        "outputDir": "/mage/scratch/pw/3/out",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/mage/scratch/pw/3/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 15000
+      }
+    ],
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.57.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "repro.spec.ts",
+      "file": "repro.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "slow",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 15000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "interrupted",
+                  "duration": 3406,
+                  "error": {
+                    "message": "Error: page.waitForTimeout: Test ended.",
+                    "stack": "Error: page.waitForTimeout: Test ended.\n    at /mage/scratch/pw/3/tests/repro.spec.ts:4:14",
+                    "location": {
+                      "file": "/mage/scratch/pw/3/tests/repro.spec.ts",
+                      "column": 14,
+                      "line": 4
+                    },
+                    "snippet": "  2 | test('slow', async ({ page }) => {\n  3 |   await page.goto('/');\n> 4 |   await page.waitForTimeout(10000);\n    |              ^\n  5 | });\n  6 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/mage/scratch/pw/3/tests/repro.spec.ts",
+                        "column": 14,
+                        "line": 4
+                      },
+                      "message": "Error: page.waitForTimeout: Test ended.\n\n  2 | test('slow', async ({ page }) => {\n  3 |   await page.goto('/');\n> 4 |   await page.waitForTimeout(10000);\n    |              ^\n  5 | });\n  6 |\n    at /mage/scratch/pw/3/tests/repro.spec.ts:4:14"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-05T19:49:08.712Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "screenshot",
+                      "contentType": "image/png",
+                      "path": "/mage/scratch/pw/3/out/repro-slow-chromium/test-failed-1.png"
+                    },
+                    {
+                      "name": "video",
+                      "contentType": "video/webm",
+                      "path": "/mage/scratch/pw/3/out/repro-slow-chromium/video.webm"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/mage/scratch/pw/3/out/repro-slow-chromium/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/mage/scratch/pw/3/tests/repro.spec.ts",
+                    "column": 14,
+                    "line": 4
+                  }
+                }
+              ],
+              "status": "skipped"
+            }
+          ],
+          "id": "39a77a05e0c54e188911-30f7f7f243c1350f614f",
+          "file": "repro.spec.ts",
+          "line": 2,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-05T19:49:08.436Z",
+    "duration": 3964.216,
+    "expected": 0,
+    "skipped": 1,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

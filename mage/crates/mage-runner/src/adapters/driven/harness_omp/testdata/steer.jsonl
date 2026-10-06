@@ -1,0 +1,19 @@
+{"type":"agent_start"}
+{"type":"message_end","messageId":"msg-1","message":{"role":"user","content":[{"type":"text","text":"[mage] read the file"}]}}
+{"type":"message_update","messageId":"msg-2","assistantMessageEvent":{"type":"toolcall_start","contentIndex":0}}
+{"type":"message_update","messageId":"msg-2","assistantMessageEvent":{"type":"toolcall_delta","contentIndex":0,"delta":"{\"command\":\"sleep 3; echo slept\"}"}}
+{"type":"message_update","messageId":"msg-2","assistantMessageEvent":{"type":"toolcall_end","contentIndex":0,"toolCall":{"type":"toolCall","id":"toolu_c1dmygw5luv","name":"bash","arguments":{"command":"sleep 3; echo slept"}}}}
+{"type":"message_end","messageId":"msg-2","message":{"role":"assistant","content":[{"type":"toolCall","id":"toolu_c1dmygw5luv","name":"bash","arguments":{"command":"sleep 3; echo slept"}}],"usage":{"input":11,"output":7,"cacheRead":0,"cacheWrite":0,"totalTokens":18,"cost":{"input":3.3e-05,"output":0.000105,"cacheRead":0,"cacheWrite":0,"total":0.000138}},"stopReason":"toolUse"}}
+{"type":"tool_execution_start","toolCallId":"toolu_c1dmygw5luv","toolName":"bash","args":{"command":"sleep 3; echo slept"}}
+{"__await":"prompt"}
+{"type":"tool_execution_end","toolCallId":"toolu_c1dmygw5luv","toolName":"bash","result":{"content":[{"type":"text","text":"slept\n\n\nWall time: 3.05 seconds"}]},"isError":false}
+{"type":"message_end","messageId":"msg-3","message":{"role":"toolResult","content":[{"type":"text","text":"slept\n\n\nWall time: 3.05 seconds"}],"toolCallId":"toolu_c1dmygw5luv","toolName":"bash","isError":false}}
+{"type":"message_end","messageId":"msg-4","message":{"role":"user","content":[{"type":"text","text":"[mage] marker-1"}]}}
+{"type":"message_update","messageId":"msg-5","assistantMessageEvent":{"type":"text_start","contentIndex":0}}
+{"type":"message_update","messageId":"msg-5","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"after steer"}}
+{"type":"message_update","messageId":"msg-5","assistantMessageEvent":{"type":"text_end","contentIndex":0,"content":"after steer"}}
+{"type":"message_end","messageId":"msg-5","message":{"role":"assistant","content":[{"type":"text","text":"after steer"}],"usage":{"input":11,"output":5,"cacheRead":0,"cacheWrite":0,"totalTokens":16,"cost":{"input":3.3e-05,"output":7.500000000000001e-05,"cacheRead":0,"cacheWrite":0,"total":0.00010800000000000001}},"stopReason":"stop"}}
+{"type":"agent_end","messages":[],"isTerminal":true,"yielded":true}
+{"type":"prompt_result","id":"$p2","agentInvoked":true,"status":"completed","sessionSettled":true}
+{"type":"prompt_result","id":"$p1","agentInvoked":true,"status":"completed","sessionSettled":true}
+{"type":"session_settled"}

@@ -1,0 +1,6 @@
+{"type":"agent_start"}
+{"type":"message_end","messageId":"msg-1","message":{"role":"user","content":[{"type":"text","text":"[mage] read the file"}]}}
+{"type":"message_end","messageId":"msg-2","message":{"role":"assistant","content":[],"usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"error","errorMessage":"401 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"scripted failure\"}}","errorStatus":401}}
+{"type":"agent_end","messages":[],"isTerminal":true,"yielded":true}
+{"type":"prompt_result","id":"$p1","agentInvoked":true,"status":"error","sessionSettled":true,"error":{"message":"401 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"scripted failure\"}}","provider":"mage","model":"claude-sonnet-4-5","retryable":false,"httpStatus":401}}
+{"type":"session_settled"}
