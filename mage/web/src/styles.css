@@ -1,0 +1,176 @@
+/* Mage pages: additions to `@aho/ui/styles.css` (import that first); its tokens only. */
+
+.mage-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.mage-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+.mage-head h1 {
+  margin: 0;
+}
+.mage-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem;
+}
+.mage-filters label {
+  min-width: 10rem;
+}
+
+/* shas, TOML and other code typed into fields */
+.mage-mono {
+  font-family: var(--mono);
+  font-size: 0.86rem;
+}
+.mage-nowrap {
+  white-space: nowrap;
+}
+
+/* run view: transcript beside progress, result and artifacts */
+.run-split {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(320px, 5fr);
+  gap: 16px;
+  align-items: start;
+}
+.run-split .transcript {
+  max-height: 70vh;
+  overflow: auto;
+}
+@media (max-width: 1000px) {
+  .run-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* untrusted markdown */
+.markdown {
+  overflow-wrap: anywhere;
+}
+.markdown pre {
+  background: var(--gray-bg);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.8rem;
+  overflow-x: auto;
+}
+.markdown code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+}
+.md-image,
+.md-link-removed {
+  color: var(--muted);
+}
+
+/* causes */
+.cause {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  background: var(--card);
+}
+.cause.superseded {
+  opacity: 0.75;
+}
+.citations {
+  list-style: none;
+  padding: 0;
+  margin: 0.25rem 0;
+  font-size: 0.86rem;
+}
+.citations li {
+  padding: 0.15rem 0;
+}
+
+/* usage vs budget */
+.meter {
+  display: grid;
+  grid-template-columns: 6rem 1fr max-content;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  font-size: 0.86rem;
+}
+.meter progress {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+/* patches */
+.diff {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: auto;
+  max-height: 32rem;
+  margin: 0;
+  padding: 0.4rem 0;
+}
+.diff div {
+  white-space: pre;
+  padding: 0 0.75rem;
+}
+.diff .add {
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+.diff .del {
+  background: var(--bad-bg);
+  color: var(--bad);
+}
+.diff .hunk {
+  color: var(--accent);
+}
+.diff .file {
+  font-weight: 650;
+}
+
+/* logs */
+.log-view {
+  position: relative;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  background: #1f1b2d;
+  color: #ece9f5;
+  border-radius: var(--radius-sm);
+}
+.log-view .log-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  white-space: pre;
+  padding: 0 0.75rem;
+}
+
+/* artifacts */
+.artifact-media video,
+.artifact-media img {
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+}
+
+/* versions × layers */
+.layers td {
+  white-space: nowrap;
+}
+
+/* steer */
+.steer textarea {
+  min-height: 4rem;
+}
+
+/* a run followed inside another page */
+.run-split-transcript {
+  max-height: 50vh;
+  overflow: auto;
+}
