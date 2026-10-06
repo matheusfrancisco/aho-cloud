@@ -2,6 +2,7 @@
 // reject, promote, roll back to it, and the on-call standing-orders grant.
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
+import { ErrorBox, Loading, useAction, useLoad } from "@aho/ui";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { SecretForm } from "../components/Secrets";
 import { StandingOrdersForm } from "../components/StandingOrdersForm";
@@ -13,8 +14,6 @@ import { approvalProgress, groupChanges, nextStage, STAGES } from "../lib/releas
 import { setCurrentOrg } from "../lib/remembered";
 import { currentSession, useSession } from "../lib/session";
 import { passkeyProof } from "../lib/webauthn";
-import { ErrorBox, Loading } from "../ui/common";
-import { useAction, useLoad } from "../ui/hooks";
 
 function signerEmail(): string {
   const s = currentSession();

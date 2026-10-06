@@ -1,12 +1,11 @@
 // Pre-approves bounded on-call verbs for a while. The grant itself is signed with a passkey.
 import { useState } from "react";
+import { ErrorBox, useAction } from "@aho/ui";
 import type { StandingOrder } from "../gen/contract";
 import { api } from "../lib/api";
 import { standingOrdersMessage } from "../lib/approval";
 import { currentSession } from "../lib/session";
 import { passkeyProof } from "../lib/webauthn";
-import { ErrorBox } from "../ui/common";
-import { useAction } from "../ui/hooks";
 
 export function StandingOrdersForm({ project }: { project: string }) {
   const [restart, setRestart] = useState(true);

@@ -2,12 +2,10 @@
 // the defaults, then straight to the sandbox while it boots.
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import { ErrorBox, Modal, useAction } from "@aho/ui";
 import { api } from "../lib/api";
 import { checkSettings, settingsDraft, type SettingsProblems } from "../lib/sandbox";
 import { slugProblem } from "../lib/slug";
-import { ErrorBox } from "../ui/common";
-import { useAction } from "../ui/hooks";
-import { Modal } from "../ui/overlay";
 import { SettingsFields } from "./SandboxSettings";
 
 export function CreateSandboxModal({ org, onClose }: { org: string; onClose: () => void }) {

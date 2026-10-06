@@ -1,9 +1,8 @@
 // `ahocloud login` shows a short code; the signed-in user types it here to bind that device key.
 import { useState } from "react";
 import { useSearchParams } from "react-router";
+import { ErrorBox, useAction } from "@aho/ui";
 import { api } from "../lib/api";
-import { ErrorBox } from "../ui/common";
-import { useAction } from "../ui/hooks";
 
 export function DevicePage() {
   const [params] = useSearchParams();

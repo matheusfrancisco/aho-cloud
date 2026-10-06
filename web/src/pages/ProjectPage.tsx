@@ -2,6 +2,7 @@
 // right. "Deploy to preview" ships the workspace files; "Go live" puts the preview on a domain.
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
+import { Badge, ErrorBox, ExternalIcon, GlobeIcon, Loading, Modal, RocketIcon, useAction, useLoad } from "@aho/ui";
 import { Chat } from "../components/Chat";
 import { CodePanel } from "../components/CodePanel";
 import { DomainsPanel } from "../components/DomainsPanel";
@@ -16,10 +17,6 @@ import { api } from "../lib/api";
 import { DeployFailed, waitForPreview } from "../lib/deploy";
 import { draftToValue } from "../lib/draft";
 import { previewUrl as rememberedPreview, rememberPreview, setCurrentOrg } from "../lib/remembered";
-import { Badge, ErrorBox, Loading } from "../ui/common";
-import { useAction, useLoad } from "../ui/hooks";
-import { ExternalIcon, GlobeIcon, RocketIcon } from "../ui/icons";
-import { Modal } from "../ui/overlay";
 
 const TABS = ["code", "releases", "domains", "secrets", "activity"] as const;
 type Tab = (typeof TABS)[number];

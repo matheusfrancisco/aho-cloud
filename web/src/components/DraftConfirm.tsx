@@ -1,10 +1,10 @@
 // Confirm screen for a manifest draft: every machine-derived field shows its evidence; weak ones
 // (inferred, observed) must be confirmed or corrected before the draft can be submitted.
 import { useState } from "react";
+import { Badge } from "@aho/ui";
 import type { Auth, DataClass, Draft, DraftField, Health, Strength } from "../gen/contract";
 import { byStrength, complete, confirm, declare, type Missing, missing, needsConfirmation, STRENGTHS, unconfirmed } from "../lib/draft";
 import { useSession } from "../lib/session";
-import { Badge } from "../ui/common";
 
 const STRENGTH_TEXT: Record<Strength, { title: string; hint: string }> = {
   inferred: { title: "Inferred", hint: "From a static scan of files. Check each value." },

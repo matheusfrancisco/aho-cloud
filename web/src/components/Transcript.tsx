@@ -1,5 +1,7 @@
 // An aho session as a conversation: prompts, replies, tool calls and results, approvals, and the
-// `Deploy/*` entries the cloud capability appends. Bookkeeping entries are not shown.
+// `Deploy/*` entries the cloud capability appends, mapped to `@aho/ui`'s transcript model.
+// Bookkeeping entries are not shown.
+import { type TranscriptBlock, type TranscriptMessage, Transcript as TranscriptView } from "@aho/ui";
 import { Link } from "react-router";
 import type { ContentBlock, Entry, EntryKindCustom } from "../aho";
 import type { Draft } from "../gen/contract";
@@ -32,40 +34,23 @@ function proposedBody(kind: EntryKindCustom): ProposedBody | null {
   return b !== null && typeof b === "object" && typeof b.release === "string" && typeof b.project === "string" ? (b as ProposedBody) : null;
 }
 
-function Blocks({ blocks }: { blocks: ContentBlock[] }) {
-  return (
-    <>
-      {blocks.map((b, i) => {
-        switch (b.type) {
-          case "text":
-            return (
-              <p key={i} className="text">
-                {b.text}
-              </p>
-            );
-          case "thinking":
-            return (
-              <details key={i} className="thinking">
-                <summary>thinking</summary>
-                <p>{b.text}</p>
-              </details>
-            );
-          case "tool_use":
-            return null; // the matching `tool_call` entry renders it
-          case "tool_result":
-            return <Blocks key={i} blocks={b.content} />;
-          case "image":
-            return (
-              <p key={i} className="muted">
-                [image {b.media_type}]
-              </p>
-            );
-          case "provider_metadata":
-            return null;
-        }
-      })}
-    </>
-  );
+function blocksOf(blocks: ContentBlock[]): TranscriptBlock[] {
+  return blocks.flatMap((b): TranscriptBlock[] => {
+    switch (b.type) {
+      case "text":
+        return [{ type: "text", text: b.text }];
+      case "thinking":
+        return [{ type: "thinking", text: b.text }];
+      case "tool_use":
+        return []; // the matching `tool_call` entry renders it
+      case "tool_result":
+        return blocksOf(b.content);
+      case "image":
+        return [{ type: "image", mediaType: b.media_type }];
+      case "provider_metadata":
+        return [];
+    }
+  });
 }
 
 function blockText(blocks: ContentBlock[]): string {
@@ -75,86 +60,81 @@ function blockText(blocks: ContentBlock[]): string {
     .join("\n");
 }
 
-function Row({ entry, onReviewDraft }: { entry: Entry; onReviewDraft?: (body: DraftedBody) => void }) {
+function message(entry: Entry, onReviewDraft: ((body: DraftedBody) => void) | undefined): TranscriptMessage | null {
+  const id = String(entry.id);
   const k = entry.kind;
   switch (k.type) {
     case "user_message":
-      return k.form === "prompt" ? (
-        <li className="msg user">
-          <span className="who">you</span>
-          <p className="text">{k.text}</p>
-        </li>
-      ) : null;
+      return k.form === "prompt" ? { kind: "user", id, text: k.text } : null;
     case "assistant_message":
-      return (
-        <li className="msg assistant">
-          <span className="who">aho</span>
-          <Blocks blocks={k.content} />
-        </li>
-      );
+      return { kind: "assistant", id, blocks: blocksOf(k.content) };
     case "assistant_attempt":
-      return <li className="msg note error">model request failed: {k.error}</li>;
+      return { kind: "notice", id, tone: "error", content: `model request failed: ${k.error}` };
     case "tool_call":
-      return (
-        <li className="msg tool">
-          <details>
-            <summary>
-              <code>{k.tool}</code> <span className="muted">{k.class.replaceAll("_", " ")}</span>
-            </summary>
-            <pre>{JSON.stringify(k.args, null, 2)}</pre>
-          </details>
-        </li>
-      );
+      return { kind: "tool_call", id, tool: k.tool, label: k.class.replaceAll("_", " "), input: JSON.stringify(k.args, null, 2) };
     case "tool_result": {
       const text = blockText(k.content);
-      return (
-        <li className={`msg tool-result ${k.outcome.outcome}`}>
-          <details>
-            <summary>
-              result: {k.outcome.outcome === "ok" ? "ok" : k.outcome.outcome === "err" ? `error ${k.outcome.code}: ${k.outcome.reason}` : `cancelled (${k.outcome.reason})`}
-            </summary>
-            <pre>{text === "" ? JSON.stringify(k.value, null, 2) : text}</pre>
-          </details>
-        </li>
-      );
+      const o = k.outcome;
+      return {
+        kind: "tool_result",
+        id,
+        outcome: o.outcome,
+        summary: o.outcome === "ok" ? "ok" : o.outcome === "err" ? `error ${o.code}: ${o.reason}` : `cancelled (${o.reason})`,
+        output: text === "" ? JSON.stringify(k.value, null, 2) : text,
+      };
     }
     case "approval_requested":
-      return (
-        <li className="msg note">
-          approval requested for <code>{k.for_cap}</code>: {k.reason}
-        </li>
-      );
+      return {
+        kind: "notice",
+        id,
+        tone: "note",
+        content: (
+          <>
+            approval requested for <code>{k.for_cap}</code>: {k.reason}
+          </>
+        ),
+      };
     case "approval_decided":
-      return <li className="msg note">approval {k.outcome.replaceAll("_", " ")} ({k.scope.replaceAll("_", " ")})</li>;
+      return { kind: "notice", id, tone: "note", content: `approval ${k.outcome.replaceAll("_", " ")} (${k.scope.replaceAll("_", " ")})` };
     case "step_end":
-      return k.transition.transition === "aborted" ? <li className="msg note">aborted: {k.transition.reason}</li> : null;
+      return k.transition.transition === "aborted" ? { kind: "notice", id, tone: "note", content: `aborted: ${k.transition.reason}` } : null;
     case "note":
-      return <li className="msg note">{k.text}</li>;
+      return { kind: "notice", id, tone: "note", content: k.text };
     case "custom": {
       const drafted = draftedBody(k);
       if (drafted !== null) {
-        return (
-          <li className="msg deploy">
-            <strong>Manifest draft ready</strong> — {Object.keys(drafted.draft.fields).length} fields, {drafted.unconfirmed.length} to confirm.{" "}
-            {onReviewDraft !== undefined && (
-              <button type="button" onClick={() => onReviewDraft(drafted)}>
-                Review draft
-              </button>
-            )}
-          </li>
-        );
+        return {
+          kind: "notice",
+          id,
+          tone: "highlight",
+          content: (
+            <>
+              <strong>Manifest draft ready</strong> — {Object.keys(drafted.draft.fields).length} fields, {drafted.unconfirmed.length} to confirm.{" "}
+              {onReviewDraft !== undefined && (
+                <button type="button" onClick={() => onReviewDraft(drafted)}>
+                  Review draft
+                </button>
+              )}
+            </>
+          ),
+        };
       }
       const proposed = proposedBody(k);
       if (proposed !== null) {
-        return (
-          <li className="msg deploy">
-            <strong>Release proposed</strong>:{" "}
-            <Link to={`/projects/${encodeURIComponent(proposed.project)}/releases/${encodeURIComponent(proposed.release)}`}>
-              <code>{proposed.release}</code>
-            </Link>{" "}
-            — review and approve it.
-          </li>
-        );
+        return {
+          kind: "notice",
+          id,
+          tone: "highlight",
+          content: (
+            <>
+              <strong>Release proposed</strong>:{" "}
+              <Link to={`/projects/${encodeURIComponent(proposed.project)}/releases/${encodeURIComponent(proposed.release)}`}>
+                <code>{proposed.release}</code>
+              </Link>{" "}
+              — review and approve it.
+            </>
+          ),
+        };
       }
       return null;
     }
@@ -165,17 +145,6 @@ function Row({ entry, onReviewDraft }: { entry: Entry; onReviewDraft?: (body: Dr
 
 /** `onReviewDraft`: offers a "Review draft" button on manifest drafts; without it they are only shown. */
 export function Transcript({ entries, streaming, onReviewDraft }: { entries: Entry[]; streaming: string; onReviewDraft?: (body: DraftedBody) => void }) {
-  return (
-    <ol className="transcript" aria-label="transcript">
-      {entries.map((e) => (
-        <Row key={e.id} entry={e} onReviewDraft={onReviewDraft} />
-      ))}
-      {streaming !== "" && (
-        <li className="msg assistant streaming">
-          <span className="who">aho</span>
-          <p className="text">{streaming}</p>
-        </li>
-      )}
-    </ol>
-  );
+  const messages = entries.flatMap((e) => message(e, onReviewDraft) ?? []);
+  return <TranscriptView messages={messages} streaming={streaming} assistantLabel="aho" />;
 }

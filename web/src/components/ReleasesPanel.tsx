@@ -1,11 +1,9 @@
 // The Releases tab: the deploy in progress (if any), what runs at each stage, and every release.
 import { Link } from "react-router";
+import { Badge, ExternalIcon, StepList, type StepState } from "@aho/ui";
 import type { Project, Release } from "../gen/api";
 import { previewState } from "../lib/deploy";
-import type { StepState } from "../lib/golive";
 import { groupChanges, STAGES } from "../lib/release";
-import { Badge, StepList } from "../ui/common";
-import { ExternalIcon } from "../ui/icons";
 import { StatusBadge } from "./ApprovalCard";
 
 /** A release being followed to preview; `failure` once it cannot get there. */

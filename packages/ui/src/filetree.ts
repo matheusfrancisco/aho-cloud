@@ -1,5 +1,14 @@
-// The workspace's flat `FileTree` listing as a nested tree for the Code tab.
-import type { FileEntry, FileKind } from "../gen/api";
+// A flat file listing as a nested tree for `CodeView`.
+
+export type FileKind = "file" | "dir" | "symlink";
+
+/** One listed path. */
+export interface FileEntry {
+  /** `/`-separated, relative to the listed root. */
+  path: string;
+  kind: FileKind;
+  size: number;
+}
 
 export interface TreeNode {
   name: string;

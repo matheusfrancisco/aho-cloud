@@ -2,10 +2,9 @@
 // owner must sign. Read-only here; changing it is a signed request.
 import { useEffect } from "react";
 import { useParams } from "react-router";
+import { ErrorBox, Loading, useLoad } from "@aho/ui";
 import { api } from "../lib/api";
 import { setCurrentOrg } from "../lib/remembered";
-import { ErrorBox, Loading } from "../ui/common";
-import { useLoad } from "../ui/hooks";
 
 export function PolicyPage() {
   const org = useParams().org ?? "";

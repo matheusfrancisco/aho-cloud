@@ -1,9 +1,9 @@
 // The project's release ledger, newest first, one line per fact.
 import type { ReactNode } from "react";
 import { Link } from "react-router";
+import { Badge, Hash, Time } from "@aho/ui";
 import type { LedgerEntry } from "../gen/api";
 import type { Approver, LedgerBody, OnCallAction, StandingOrder } from "../gen/contract";
-import { Badge, Hash, Time } from "../ui/common";
 
 function orderText(o: StandingOrder): string {
   return o.kind === "scale" ? `scale ${o.min}–${o.max}` : o.kind.replaceAll("_", " ");

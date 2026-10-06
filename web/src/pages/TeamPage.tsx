@@ -2,11 +2,10 @@
 // many approvals a release can be asked for.
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
+import { Badge, ErrorBox, Loading, useAction, useLoad } from "@aho/ui";
 import { useShell } from "../components/Shell";
 import { api } from "../lib/api";
 import { setCurrentOrg } from "../lib/remembered";
-import { Badge, ErrorBox, Loading } from "../ui/common";
-import { useAction, useLoad } from "../ui/hooks";
 
 export function TeamPage() {
   const org = useParams().org ?? "";

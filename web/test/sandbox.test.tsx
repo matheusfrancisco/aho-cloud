@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { encodeFrame } from "@aho/ui";
 import { MemoryRouter, Route, Routes, useParams } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "../src/App";
@@ -8,7 +9,6 @@ import { SandboxSettingsPanel } from "../src/components/SandboxSettings";
 import { SandboxTerminal } from "../src/components/SandboxTerminal";
 import type { EnvVarView, Sandbox } from "../src/gen/api";
 import { api } from "../src/lib/api";
-import { encodeFrame } from "../src/lib/exec";
 import { DEFAULT_SANDBOX_EGRESS } from "../src/lib/sandbox";
 import { signIn } from "../src/lib/session";
 import { SandboxPage } from "../src/pages/SandboxPage";

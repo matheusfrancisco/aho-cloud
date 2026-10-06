@@ -1517,7 +1517,7 @@ button.tree-row.selected {
   color: var(--muted);
   font-size: 0.86rem;
 }
-.msg.deploy {
+.msg.highlight {
   border-color: #c4b5fd;
   background: #faf8ff;
 }

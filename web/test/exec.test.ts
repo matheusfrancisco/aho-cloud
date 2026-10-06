@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decodeFrame, encodeFrame, type Frame, MAX_FRAME } from "../src/lib/exec";
+import { decodeFrame, encodeFrame, type Frame, MAX_FRAME } from "@aho/ui";
 
 describe("exec frames", () => {
   it("has the same wire bytes as crates/api/src/exec.rs (wire_bytes_are_fixed)", () => {

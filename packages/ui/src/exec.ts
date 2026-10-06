@@ -3,7 +3,22 @@
 // rows u16 BE; `Exit` = i32 BE (`128 + signal` when killed); `Error` = UTF-8 text and ends the
 // session. Terminal sockets never carry `Request`: the session host's token is bound to the
 // request the control plane made.
-import type { ExecRequest } from "../gen/api";
+
+/** A terminal size in character cells. */
+export interface PtySize {
+  cols: number;
+  rows: number;
+}
+
+/** The command a `Request` frame opens a session for (`ExecRequest` in `crates/api/src/exec.rs`). */
+export interface ExecRequest {
+  argv: string[];
+  /** Allocate a terminal of this size; without it, stdout and stderr are separate pipes. */
+  pty: PtySize | null;
+  /** Added to the target's own environment. */
+  env: { [key: string]: string };
+  cwd: string | null;
+}
 
 export const KIND_STDIN = 0;
 export const KIND_STDOUT = 1;

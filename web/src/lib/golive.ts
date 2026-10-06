@@ -1,6 +1,7 @@
 // "Go live": put the release running at preview on the project's domain. The domain is bound to
 // the project, the release must declare it (else a copy that does is proposed and followed to
 // preview), then it is approved and promoted stage by stage: staging, then live.
+import type { StepState } from "@aho/ui";
 import type { ApprovalProof, DomainView, Release } from "../gen/api";
 import type { DomainMode, Manifest, Stage } from "../gen/contract";
 import type { Api } from "./api";
@@ -49,8 +50,6 @@ export const PROMOTE_STEPS: ReadonlyArray<{ id: PromoteStep; stage: Stage; label
   { id: "approve_live", stage: "live", label: "Approve for live with your passkey" },
   { id: "promote_live", stage: "live", label: "Promote to live" },
 ];
-
-export type StepState = "pending" | "running" | "done" | "skipped" | "failed";
 
 export interface PromoteOptions {
   /** The signer; an approval they already gave is not asked for again. */

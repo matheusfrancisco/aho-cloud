@@ -1,16 +1,14 @@
-// The signed-in frame: top bar with the account menu, and a sidebar with the org switcher, the
-// Create menu, and the org's pages. Pages read the shell through `useShell`.
+// The signed-in frame (`@aho/ui`'s `Shell`) filled for aho cloud: the account menu, and a sidebar
+// with the org switcher, the Create menu, and the org's pages. Pages read the shell through
+// `useShell`.
 import { createContext, useContext, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
+import { AccountMenu as AccountDropdown, ChevronDown, Dropdown, ErrorBox, IconSquare, LogoMark, OrgIcon, PlusIcon, PolicyIcon, ProjectsIcon, PublicShell as PublicFrame, RocketIcon, SandboxIcon, Shell as Frame, TeamIcon, useAction, useLoad } from "@aho/ui";
 import type { Me } from "../gen/api";
 import { api } from "../lib/api";
 import { setCurrentOrg, useCurrentOrg } from "../lib/remembered";
 import { signOut, useSession } from "../lib/session";
 import { slugProblem } from "../lib/slug";
-import { ErrorBox } from "../ui/common";
-import { useAction, useLoad } from "../ui/hooks";
-import { ChevronDown, IconSquare, LogoMark, OrgIcon, PlusIcon, PolicyIcon, ProjectsIcon, RocketIcon, SandboxIcon, TeamIcon, UserIcon } from "../ui/icons";
-import { Dropdown } from "../ui/overlay";
 import { CreateProjectModal } from "./CreateProject";
 import { CreateSandboxModal } from "./CreateSandbox";
 
@@ -44,21 +42,9 @@ function AccountMenu() {
   const navigate = useNavigate();
   if (session === null) return null;
   return (
-    <Dropdown
-      buttonClass="topbar-button"
-      align="right"
-      label={
-        <>
-          <UserIcon /> Account <ChevronDown />
-        </>
-      }
-    >
+    <AccountDropdown user={session.user}>
       {(close) => (
         <>
-          <div className="menu-head">
-            <strong>{session.user.name}</strong>
-            <span className="muted">{session.user.email}</span>
-          </div>
           <Link role="menuitem" className="menu-item" to="/device" onClick={close}>
             Approve a device
           </Link>
@@ -76,7 +62,7 @@ function AccountMenu() {
           </button>
         </>
       )}
-    </Dropdown>
+    </AccountDropdown>
   );
 }
 
@@ -236,7 +222,7 @@ function Sidebar() {
   const inProject = location.pathname.startsWith("/projects/");
   const inSandbox = location.pathname.startsWith("/sandboxes/");
   return (
-    <aside className="sidebar">
+    <>
       <div className="side-label">Organization</div>
       <OrgSwitcher />
       <CreateMenu />
@@ -270,7 +256,7 @@ function Sidebar() {
           </NavLink>
         </nav>
       )}
-    </aside>
+    </>
   );
 }
 
@@ -282,18 +268,9 @@ export function Shell() {
   const state: ShellState = { me: me.data, meError: me.error, reloadMe: me.reload, org, createProject: () => setCreating("project"), createSandbox: () => setCreating("sandbox") };
   return (
     <ShellContext.Provider value={state}>
-      <header className="topbar">
-        <Brand />
-        <div className="topbar-right">
-          <AccountMenu />
-        </div>
-      </header>
-      <div className="layout">
-        <Sidebar />
-        <main className="content">
-          <Outlet />
-        </main>
-      </div>
+      <Frame brand={<Brand />} account={<AccountMenu />} sidebar={<Sidebar />}>
+        <Outlet />
+      </Frame>
       {creating === "project" && org !== null && <CreateProjectModal org={org} onClose={() => setCreating(null)} />}
       {creating === "sandbox" && org !== null && <CreateSandboxModal org={org} onClose={() => setCreating(null)} />}
     </ShellContext.Provider>
@@ -303,13 +280,8 @@ export function Shell() {
 /** Signed-out frame: just the brand. */
 export function PublicShell() {
   return (
-    <>
-      <header className="topbar">
-        <Brand />
-      </header>
-      <main className="public">
-        <Outlet />
-      </main>
-    </>
+    <PublicFrame brand={<Brand />}>
+      <Outlet />
+    </PublicFrame>
   );
 }

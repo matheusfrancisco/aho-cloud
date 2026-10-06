@@ -2,13 +2,11 @@
 // created it, and when it stops on its own. Followed while any is starting.
 import { useEffect } from "react";
 import { Link, useParams } from "react-router";
+import { Ago, Badge, EmptyIllustration, ErrorBox, ExternalIcon, Loading, PlusIcon, useInterval, useLoad } from "@aho/ui";
 import { useShell } from "../components/Shell";
 import type { Sandbox, SandboxState } from "../gen/api";
 import { api } from "../lib/api";
 import { setCurrentOrg } from "../lib/remembered";
-import { Ago, Badge, ErrorBox, Loading } from "../ui/common";
-import { useInterval, useLoad } from "../ui/hooks";
-import { EmptyIllustration, ExternalIcon, PlusIcon } from "../ui/icons";
 
 const STATE_TONE: Record<SandboxState, "ok" | "info" | "muted" | "bad"> = { running: "ok", starting: "info", stopped: "muted", failed: "bad" };
 

@@ -1,9 +1,9 @@
 // The approval card: what this release changes against live, what it takes to ship it, and what
 // blocks it. Widenings are what a signer vouches for, so they come first and stand out.
+import { Badge, Hash } from "@aho/ui";
 import type { Release, ReleaseStatus } from "../gen/api";
 import type { Change, Direction, Stage } from "../gen/contract";
 import { approvalProgress, groupChanges } from "../lib/release";
-import { Badge, Hash } from "../ui/common";
 
 const STATUS_TONE: Record<ReleaseStatus, "ok" | "warn" | "bad" | "info" | "muted"> = {
   building: "info",

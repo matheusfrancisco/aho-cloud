@@ -1,6 +1,7 @@
 // Typed control-plane client over the generated `routes`. Every path comes from `routes` +
 // `fill`; every body type from the generated contract. Errors surface as `ApiError` with the
 // server's stable `code`.
+import { CodedError } from "@aho/ui";
 import { fill, routes } from "../gen/api";
 import type {
   AddDomain,
@@ -53,19 +54,17 @@ import { currentToken, signOut } from "./session";
 export type AhoTarget = { kind: "project"; project: string } | { kind: "sandbox"; sandbox: string };
 
 /** A failed API call: the server's `ApiError` body, or a transport failure described the same way. */
-export class ApiError extends Error {
+export class ApiError extends CodedError {
   /** HTTP status; `0` when no response arrived. */
   readonly status: number;
   /** Server code (`unauthorized`, `refused`, `quorum_not_met`, …), `network`, or `http_<status>` for a body that is not an `ApiError`. */
-  readonly code: string;
-  readonly refusals: Refusal[];
+  declare readonly code: string;
+  declare readonly refusals: Refusal[];
 
   constructor(status: number, code: string, message: string, refusals: Refusal[] = []) {
-    super(message);
+    super(code, message, refusals);
     this.name = "ApiError";
     this.status = status;
-    this.code = code;
-    this.refusals = refusals;
   }
 }
 

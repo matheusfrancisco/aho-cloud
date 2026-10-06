@@ -1,11 +1,9 @@
 // "New project": a slug, checked as the user types, then straight to the project to chat with aho.
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import { ErrorBox, Modal, useAction } from "@aho/ui";
 import { api } from "../lib/api";
 import { slugProblem } from "../lib/slug";
-import { ErrorBox } from "../ui/common";
-import { useAction } from "../ui/hooks";
-import { Modal } from "../ui/overlay";
 
 export function CreateProjectModal({ org, onClose }: { org: string; onClose: () => void }) {
   const navigate = useNavigate();

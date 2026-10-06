@@ -3,16 +3,13 @@
 // terminal and chat stay connected while other tabs show.
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
+import { Ago, ErrorBox, ExternalIcon, Loading, Modal, PlayIcon, StopIcon, useAction, useInterval, useLoad } from "@aho/ui";
 import { Chat } from "../components/Chat";
 import { CodePanel } from "../components/CodePanel";
 import { SandboxSettingsPanel } from "../components/SandboxSettings";
 import type { Sandbox } from "../gen/api";
 import { api } from "../lib/api";
 import { setCurrentOrg } from "../lib/remembered";
-import { Ago, ErrorBox, Loading } from "../ui/common";
-import { useAction, useInterval, useLoad } from "../ui/hooks";
-import { ExternalIcon, PlayIcon, StopIcon } from "../ui/icons";
-import { Modal } from "../ui/overlay";
 import { AutoStop, SandboxStateBadge } from "./SandboxesPage";
 
 // xterm.js is only needed here: load it with the terminal, not with the console.

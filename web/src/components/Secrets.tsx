@@ -1,12 +1,11 @@
 // Secrets are write-only: values go to the control plane and never come back. The list shows
 // names, stages, and the keyed fingerprint the taint scan matches on.
 import { useState } from "react";
+import { ErrorBox, Hash, useAction } from "@aho/ui";
 import type { SecretView } from "../gen/api";
 import type { Stage } from "../gen/contract";
 import { api } from "../lib/api";
 import { STAGES } from "../lib/release";
-import { ErrorBox, Hash } from "../ui/common";
-import { useAction } from "../ui/hooks";
 
 export function SecretForm({ project, name: fixedName, onSaved }: { project: string; name?: string; onSaved?: (s: SecretView) => void }) {
   const [name, setName] = useState(fixedName ?? "");

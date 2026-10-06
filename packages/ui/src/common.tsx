@@ -1,12 +1,35 @@
 import { type ReactNode, useState } from "react";
-import { ApiError } from "../lib/api";
-import type { StepState } from "../lib/golive";
 import { CheckIcon, CopyIcon } from "./icons";
 
-/** An error as the user should read it: API code and refusals, or the plain message. */
+/** A field-level reason a request was refused, with how to fix it. */
+export interface FieldRefusal {
+  code: string;
+  /** Where the problem is, e.g. a JSON pointer into the submitted document. */
+  field: string;
+  message: string;
+  fix: string;
+}
+
+/**
+ * An error with a machine-readable code and optional field refusals. API clients extend it so
+ * `ErrorBox` shows the code and every refusal.
+ */
+export class CodedError extends Error {
+  readonly code: string;
+  readonly refusals: readonly FieldRefusal[];
+
+  constructor(code: string, message: string, refusals: readonly FieldRefusal[] = []) {
+    super(message);
+    this.name = "CodedError";
+    this.code = code;
+    this.refusals = refusals;
+  }
+}
+
+/** An error as the user should read it: code and refusals of a `CodedError`, or the plain message. */
 export function ErrorBox({ error }: { error: unknown }) {
   if (error === null || error === undefined) return null;
-  if (error instanceof ApiError) {
+  if (error instanceof CodedError) {
     return (
       <div className="error" role="alert">
         <strong>{error.code}</strong>: {error.message}
@@ -110,6 +133,9 @@ export function CopyButton({ text, label = "Copy" }: { text: string; label?: str
     </button>
   );
 }
+
+/** Where one step of a multi-step operation is. */
+export type StepState = "pending" | "running" | "done" | "skipped" | "failed";
 
 /** A vertical checklist of a multi-step operation. */
 export function StepList({ steps }: { steps: ReadonlyArray<{ id: string; label: ReactNode; state: StepState; detail?: ReactNode }> }) {

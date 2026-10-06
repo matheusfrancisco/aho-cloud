@@ -1,17 +1,14 @@
 // "Go live": pick (or add) the project's domain, make sure the release declares it, then approve
 // and promote it — staging, then live — each approval signed with the user's passkey.
 import { useState } from "react";
+import { Badge, ErrorBox, ExternalIcon, Modal, StepList, type StepState, useAction } from "@aho/ui";
 import type { DomainView, Project, Release } from "../gen/api";
 import { api } from "../lib/api";
 import { previewState, waitForPreview } from "../lib/deploy";
-import { declares, type DomainChoice, ensureDeclared, ensureDomain, PROMOTE_STEPS, type PromoteStep, promoteToLive, type StepState } from "../lib/golive";
+import { declares, type DomainChoice, ensureDeclared, ensureDomain, PROMOTE_STEPS, type PromoteStep, promoteToLive } from "../lib/golive";
 import { nextStage } from "../lib/release";
 import { useSession } from "../lib/session";
 import { passkeyProof } from "../lib/webauthn";
-import { Badge, ErrorBox, StepList } from "../ui/common";
-import { useAction } from "../ui/hooks";
-import { ExternalIcon } from "../ui/icons";
-import { Modal } from "../ui/overlay";
 import { ApprovalCard } from "./ApprovalCard";
 import { AddDomainForm, DOMAIN_STATE_TONE, DomainRow } from "./DomainsPanel";
 

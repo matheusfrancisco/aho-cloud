@@ -1,10 +1,9 @@
 // Custom domains: the DNS records to create, the binding state, and a verify button.
 import { useState } from "react";
+import { Badge, ErrorBox, useAction } from "@aho/ui";
 import type { DomainState, DomainView } from "../gen/api";
 import type { DomainMode } from "../gen/contract";
 import { api } from "../lib/api";
-import { Badge, ErrorBox } from "../ui/common";
-import { useAction } from "../ui/hooks";
 
 export const DOMAIN_STATE_TONE: Record<DomainState, "ok" | "warn" | "bad" | "info" | "muted"> = {
   pending: "warn",

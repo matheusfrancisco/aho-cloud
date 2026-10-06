@@ -3,7 +3,9 @@
 React + TypeScript console for aho cloud: passkey sign-in, device approval, organizations and
 their projects, chatting with aho in a project's workspace, its code, deploying the workspace to
 a preview, going live on the project's domain, release approval cards, domains, secrets, the
-release ledger, and sandboxes (VMs with aho for coding without deploying: terminal, chat, files). Plain CSS (`src/styles.css`, CSS variables), no UI framework.
+release ledger, and sandboxes (VMs with aho for coding without deploying: terminal, chat, files).
+Plain CSS (CSS variables), no UI framework. Styles, shared components, the frame, transcript,
+code view and terminal come from `@aho/ui` (`../packages/ui`, linked with `file:`).
 
 Node 22 or newer.
 
@@ -60,7 +62,7 @@ plane's configured WebAuthn origin and RP id.
   while the sandbox is not running):
   - *Terminal* — xterm.js, loaded only by this page. `POST SANDBOX_TERMINAL {cols, rows}` with the
     fitted size, then the returned URL `?token=` as a binary WebSocket carrying exec frames
-    (`src/lib/exec.ts`): keystrokes → Stdin, fit on window resize → Resize, Stdout/Stderr →
+    (`@aho/ui`'s exec codec): keystrokes → Stdin, fit on window resize → Resize, Stdout/Stderr →
     terminal. Exit shows `[process exited with code N]`, an Error frame its message, a drop the
     close code; each offers Reconnect, and nothing reconnects on its own.
   - *Chat* — the project chat, connected through `SANDBOX_CHAT` (same takeover rule: 4000 closes
@@ -87,17 +89,18 @@ slug also serves as the `{project}.` template for other projects' preview links.
   register, login, and approval assertions.
 - `src/lib/rpc.ts` — `RpcClient`: `hello` handshake, request ids, event dispatch, reconnect with
   `session.subscribe{from}`.
-- `src/lib/exec.ts` — the exec frame codec, byte for byte `crates/api/src/exec.rs` (kind byte +
-  payload; Resize = cols, rows u16 BE; Exit = i32 BE).
 - `src/lib/sandbox.ts` — sandbox defaults (mirrors of the Rust constants), egress host and env
   name rules, the settings form's check.
 - `src/lib/deploy.ts` — following a release to preview (`waitForPreview`).
 - `src/lib/golive.ts` — the go-live steps: bind the domain, declare it, approve and promote.
-- `src/lib/status.ts`, `src/lib/filetree.ts`, `src/lib/slug.ts` — dashboard status/filter/feed,
-  the file tree from `FileTree` paths, the slug rule.
+- `src/lib/status.ts`, `src/lib/slug.ts` — dashboard status/filter/feed, the slug rule.
 - `src/lib/draft.ts`, `src/components/DraftConfirm.tsx` — draft confirmation (weak fields must be
   confirmed or corrected before submit).
-- `src/components/` — shell, chat, code panel, releases, go-live modal, create-project and
-  create-sandbox modals, sandbox terminal and settings, approval card, domains, secrets, ledger,
-  transcript, standing orders.
-- `src/pages/` — routed screens; `src/ui/` — shared bits (errors, badges, modal, dropdown, icons).
+- `src/components/` — shell (fills `@aho/ui`'s `Shell`), chat, code panel (an `@aho/ui`
+  `CodeView` over the workspace or sandbox files), releases, go-live modal, create-project and
+  create-sandbox modals, sandbox terminal (an `@aho/ui` `Terminal` over `SANDBOX_TERMINAL`) and
+  settings, approval card, domains, secrets, ledger, transcript (aho entries mapped to `@aho/ui`'s
+  transcript model), standing orders.
+- `src/pages/` — routed screens.
+- `vite.config.ts` dedupes React and xterm: `../packages/ui` has its own `node_modules` for its
+  tests, and the console must load one copy.

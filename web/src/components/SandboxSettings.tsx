@@ -2,12 +2,10 @@
 // The settings fields are shared with the create form. Variables are write-only like secrets:
 // names and fingerprints come back, values never do.
 import { useState } from "react";
+import { CloseIcon, ErrorBox, Hash, Loading, useAction, useLoad } from "@aho/ui";
 import type { EnvVarView, Sandbox } from "../gen/api";
 import { api } from "../lib/api";
 import { AUTO_STOP_MAX_HOURS, checkSettings, egressProblem, envNameProblem, type SettingsDraft, settingsDraft, type SettingsProblems } from "../lib/sandbox";
-import { ErrorBox, Hash, Loading } from "../ui/common";
-import { useAction, useLoad } from "../ui/hooks";
-import { CloseIcon } from "../ui/icons";
 
 /** Egress list, public port and auto-stop hours. `problems` shows once the user tried to submit. */
 export function SettingsFields({ draft, onChange, problems }: { draft: SettingsDraft; onChange: (d: SettingsDraft) => void; problems: SettingsProblems | null }) {

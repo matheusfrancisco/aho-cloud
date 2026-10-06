@@ -1,9 +1,8 @@
 // `/`: the org the user last worked in (or their first); a first-run card when they have none.
 import { Navigate, useNavigate } from "react-router";
+import { EmptyIllustration, ErrorBox, Loading } from "@aho/ui";
 import { NewOrgForm, useShell } from "../components/Shell";
 import { currentOrg, setCurrentOrg } from "../lib/remembered";
-import { ErrorBox, Loading } from "../ui/common";
-import { EmptyIllustration } from "../ui/icons";
 
 export function HomePage() {
   const { me, meError, reloadMe } = useShell();

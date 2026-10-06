@@ -3,15 +3,13 @@
 // drafts a manifest, the human confirms it here and the console uploads the session log (the
 // provenance) and proposes.
 import { useEffect, useReducer, useRef, useState } from "react";
+import { Badge, ErrorBox, Modal, useAction } from "@aho/ui";
 import type { AnswerOutcome, ApprovalCard as AhoCard, Entry, Event } from "../aho";
 import type { CheckResult, Release, SandboxChat, Workspace } from "../gen/api";
 import type { Draft, Manifest } from "../gen/contract";
 import { type AhoTarget, api } from "../lib/api";
 import { draftToValue } from "../lib/draft";
 import { RpcClient, type Status } from "../lib/rpc";
-import { Badge, ErrorBox } from "../ui/common";
-import { useAction } from "../ui/hooks";
-import { Modal } from "../ui/overlay";
 import { DraftConfirm } from "./DraftConfirm";
 import { type DraftedBody, Transcript } from "./Transcript";
 
@@ -40,6 +38,9 @@ function reduce(view: View, a: ViewAction): View {
       return view.cards.some((c) => c.id === a.payload.id) ? view : { ...view, cards: [...view.cards, a.payload] };
     case "error":
       return { ...view, notices: [...view.notices.slice(-4), a.payload.message] };
+    case "job_finished":
+      // The next turn delivers the job's result as entries; nothing to show until then.
+      return view;
     case "answered":
       return { ...view, cards: view.cards.filter((c) => c.id !== a.id) };
   }
