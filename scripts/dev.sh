@@ -18,7 +18,8 @@
 # aho, reached from the console's Terminal and Chat tabs or `ahocloud ssh`.
 #
 # Env: AHO_CLOUD_DEV_DIR (state, default ./.dev), CP_PORT (8080), SH_PORT (8790), WEB_PORT (5173),
-#      EDGE_PORT (8443), REGISTRY_PORT (5055; macOS AirPlay holds 5000).
+#      EDGE_PORT (8443), REGISTRY_PORT (5055; macOS AirPlay holds 5000),
+#      SANDBOX_IMAGE (`aho.sandbox@sha256:…` already in the registry: skip building the sandbox image).
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -163,11 +164,16 @@ if [[ "$mode" == deploy ]]; then
   builder_url="http://127.0.0.1:$builder_port"
   runtime_url="http://127.0.0.1:$runtime_port"
   preview_url="http://{project}.preview.localhost:$edge_port"
-  echo "building the sandbox image (log: $dev/sandbox-image.log)…"
-  if ! sandbox_image=$(REGISTRY_PORT="$registry_port" BUILDKIT_PROGRESS=plain \
-    "$root/scripts/build-sandbox-image.sh" "localhost:$registry_port/aho-cloud" 2>"$dev/sandbox-image.log"); then
-    tail -n 30 "$dev/sandbox-image.log" >&2
-    exit 1
+  if [[ -n "${SANDBOX_IMAGE:-}" ]]; then
+    sandbox_image="$SANDBOX_IMAGE"
+    echo "using sandbox image $sandbox_image"
+  else
+    echo "building the sandbox image (log: $dev/sandbox-image.log)…"
+    if ! sandbox_image=$(REGISTRY_PORT="$registry_port" BUILDKIT_PROGRESS=plain \
+      "$root/scripts/build-sandbox-image.sh" "localhost:$registry_port/aho-cloud" 2>"$dev/sandbox-image.log"); then
+      tail -n 30 "$dev/sandbox-image.log" >&2
+      exit 1
+    fi
   fi
   # Sandboxes need the runtime: without these flags they answer 503 `sandboxes_disabled`.
   cp_sandbox=(--sandbox-image "$sandbox_image")
